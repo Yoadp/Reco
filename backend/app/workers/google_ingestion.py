@@ -1,9 +1,9 @@
 """
-Ingestion worker: pulls restaurants from Google Places API for a given city
+Ingestion worker: pulls restaurants from Google Places API (New) for a given city
 and upserts them into the database.
 
 Usage:
-    python -m app.workers.google_ingestion --city "Tel Aviv" --query "restaurant"
+    python -m app.workers.google_ingestion --city "תל אביב" --query "restaurant"
 """
 
 import asyncio
@@ -15,75 +15,112 @@ from app.core.database import AsyncSessionLocal
 from app.models.place import DataSource
 from app.services.places import upsert_place_from_google
 
-PLACES_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
-PLACES_DETAIL_URL = "https://maps.googleapis.com/maps/api/place/details/json"
+PLACES_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 
-DETAIL_FIELDS = "place_id,name,formatted_address,geometry,formatted_phone_number,website,opening_hours,photos,rating,price_level,types"
+FIELD_MASK = (
+    "places.id,places.displayName,places.formattedAddress,"
+    "places.location,places.rating,places.priceLevel,"
+    "places.websiteUri,places.nationalPhoneNumber,"
+    "places.regularOpeningHours,places.primaryTypeDisplayName,"
+    "places.photos"
+)
+
+PRICE_MAP = {
+    "PRICE_LEVEL_FREE":           1,
+    "PRICE_LEVEL_INEXPENSIVE":    1,
+    "PRICE_LEVEL_MODERATE":       2,
+    "PRICE_LEVEL_EXPENSIVE":      3,
+    "PRICE_LEVEL_VERY_EXPENSIVE": 4,
+}
 
 
-async def fetch_place_details(client: httpx.AsyncClient, place_id: str) -> dict:
-    resp = await client.get(
-        PLACES_DETAIL_URL,
-        params={"place_id": place_id, "fields": DETAIL_FIELDS, "key": settings.google_places_api_key},
-    )
-    resp.raise_for_status()
-    return resp.json().get("result", {})
+def _normalize(raw: dict, city: str) -> dict:
+    """Map New Places API response fields to the dict upsert_place_from_google expects."""
+    loc = raw.get("location", {})
+    price_str = raw.get("priceLevel", "")
+    hours = raw.get("regularOpeningHours", {})
+    # Store just photo names (real URLs fetched later by google_places_photos worker)
+    photos = [p["name"] for p in raw.get("photos", [])[:5] if "name" in p]
+
+    return {
+        "place_id":              raw.get("id", ""),
+        "name":                  raw.get("displayName", {}).get("text", ""),
+        "formatted_address":     raw.get("formattedAddress", ""),
+        "city":                  city,
+        "lat":                   loc.get("latitude"),
+        "lng":                   loc.get("longitude"),
+        "formatted_phone_number": raw.get("nationalPhoneNumber"),
+        "website":               raw.get("websiteUri"),
+        "opening_hours":         hours if hours else None,
+        "rating":                raw.get("rating"),
+        "price_level":           PRICE_MAP.get(price_str),
+        "photos":                photos if photos else None,
+    }
 
 
-async def ingest_city(city: str, query: str = "restaurant", max_results: int = 60):
+async def ingest_city(city: str, query: str = "restaurant", max_results: int = 60, query_city: str | None = None):
+    """city = Hebrew label stored in DB. query_city = string sent to Google API (use English for better results)."""
     if not settings.google_places_api_key:
         print("GOOGLE_PLACES_API_KEY not set — skipping ingestion")
         return
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        params = {"query": f"{query} in {city}", "key": settings.google_places_api_key}
-        places_raw = []
+    headers = {
+        "Content-Type":   "application/json",
+        "X-Goog-Api-Key": settings.google_places_api_key,
+        "X-Goog-FieldMask": FIELD_MASK,
+        "Referer": "http://localhost:3000",
+    }
 
+    places_raw: list[dict] = []
+    page_token: str | None = None
+
+    async with httpx.AsyncClient(timeout=30) as client:
         while len(places_raw) < max_results:
-            resp = await client.get(PLACES_SEARCH_URL, params=params)
+            body: dict = {
+                "textQuery":     f"{query} in {query_city or city}",
+                "maxResultCount": min(20, max_results - len(places_raw)),
+                "languageCode":  "he",
+            }
+            if page_token:
+                body["pageToken"] = page_token
+
+            resp = await client.post(PLACES_SEARCH_URL, headers=headers, json=body)
             resp.raise_for_status()
             data = resp.json()
-            places_raw.extend(data.get("results", []))
-            next_token = data.get("next_page_token")
-            if not next_token:
+
+            batch = data.get("places", [])
+            places_raw.extend(batch)
+            page_token = data.get("nextPageToken")
+            if not page_token or not batch:
                 break
-            params = {"pagetoken": next_token, "key": settings.google_places_api_key}
-            await asyncio.sleep(2)  # required delay for next_page_token
+            await asyncio.sleep(2)  # required delay between pages
 
         async with AsyncSessionLocal() as db:
-            for raw in places_raw[:max_results]:
+            for raw in places_raw:
                 try:
-                    detail = await fetch_place_details(client, raw["place_id"])
-                    normalized = {
-                        "place_id": raw["place_id"],
-                        "name": detail.get("name", raw.get("name", "")),
-                        "formatted_address": detail.get("formatted_address", ""),
-                        "city": city,
-                        "lat": detail.get("geometry", {}).get("location", {}).get("lat"),
-                        "lng": detail.get("geometry", {}).get("location", {}).get("lng"),
-                        "formatted_phone_number": detail.get("formatted_phone_number"),
-                        "website": detail.get("website"),
-                        "opening_hours": detail.get("opening_hours"),
-                        "rating": detail.get("rating"),
-                        "price_level": detail.get("price_level"),
-                        "photos": [p.get("photo_reference") for p in detail.get("photos", [])[:5]],
-                    }
+                    normalized = _normalize(raw, city)
+                    if not normalized["name"]:
+                        continue
                     place = await upsert_place_from_google(db, normalized)
+                    # Add google_places DataSource if not already present
                     source = DataSource(
                         place_id=place.id,
                         source_type="google_places",
-                        url=f"https://maps.google.com/?cid={raw['place_id']}",
-                        raw_json=detail,
+                        source_name="Google",
+                        url=f"https://maps.google.com/?cid={raw.get('id', '')}",
                         confidence=0.9,
+                        raw_json=raw,
                     )
                     db.add(source)
                     await db.flush()
-                    print(f"  upserted: {place.name}")
+                    print(f"  upserted: {place.name} ({place.city})")
                 except Exception as exc:
-                    print(f"  error for {raw.get('name', '?')}: {exc}")
+                    name = raw.get("displayName", {}).get("text", "?")
+                    print(f"  error for {name}: {exc}")
 
             await db.commit()
-    print(f"Done — processed up to {len(places_raw)} places in {city}")
+
+    print(f"Done — processed {len(places_raw)} places in {city}")
 
 
 if __name__ == "__main__":

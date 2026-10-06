@@ -71,7 +71,8 @@ export const searchPlaces = (params: {
   cuisine?: string;
   price_range?: number;
   nlp?: boolean;
-}) => api.get<Place[]>("/places", { params }).then((r) => r.data);
+  limit?: number;
+}) => api.get<Place[]>("/places", { params: { limit: 200, ...params } }).then((r) => r.data);
 
 export const getPlace = (slug: string) =>
   api.get<Place & { sources: DataSource[] }>(`/places/${slug}`).then((r) => r.data);
@@ -95,6 +96,26 @@ export const login = (email: string, password: string) =>
 
 export const register = (email: string, username: string, password: string) =>
   api.post<{ access_token: string }>("/auth/register", { email, username, password }).then((r) => r.data);
+
+// ---- Visits ----
+
+export interface UserVisit {
+  id: string;
+  place_id: string;
+  source: string | null;
+  visit_date: string | null;   // ISO date "YYYY-MM-DD"
+  visited_at: string;
+  rated: boolean;
+}
+
+export const postVisit = (placeId: string, source: string, visitDate?: string) =>
+  api.post<UserVisit>("/visits", { place_id: placeId, source, visit_date: visitDate ?? null }).then(r => r.data);
+
+export const getPendingVisits = () =>
+  api.get<UserVisit[]>("/visits/pending").then(r => r.data);
+
+export const getPlaceVisits = (placeId: string) =>
+  api.get<UserVisit[]>(`/visits/place/${placeId}`).then(r => r.data);
 
 // ---- Ratings ----
 

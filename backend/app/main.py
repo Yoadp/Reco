@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, places, recommendations, users, ai, ratings
+from app.api import auth, places, recommendations, users, ai, ratings, visits
 
 app = FastAPI(title="Reco API", version="0.1.0")
 
@@ -19,6 +19,7 @@ app.include_router(recommendations.router)
 app.include_router(users.router)
 app.include_router(ai.router)
 app.include_router(ratings.router)
+app.include_router(visits.router)
 
 
 @app.get("/health")

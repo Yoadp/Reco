@@ -54,7 +54,7 @@ async def list_places(
     city: Optional[str] = Query(None),
     cuisine: Optional[str] = Query(None),
     price_range: Optional[int] = Query(None, ge=1, le=4),
-    limit: int = Query(20, le=50),
+    limit: int = Query(100, le=500),
     offset: int = Query(0),
     nlp: bool = Query(False),
     db: AsyncSession = Depends(get_db),

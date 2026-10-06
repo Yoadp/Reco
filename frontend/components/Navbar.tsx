@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import api, { type UserProfile } from "@/lib/api";
+import api, { type UserProfile, getPendingVisits, type UserVisit } from "@/lib/api";
 
 export default function Navbar() {
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [pendingVisits, setPendingVisits] = useState<UserVisit[]>([]);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
     api.get<UserProfile>("/users/me").then((r) => setUser(r.data)).catch(() => {});
+    getPendingVisits().then(setPendingVisits).catch(() => {});
   }, []);
 
   function logout() {
@@ -30,9 +32,12 @@ export default function Navbar() {
       <div className="flex-1" />
       {user ? (
         <div className="flex items-center gap-4">
-          <Link href="/profile" className="text-sm font-medium">
+          <Link href="/profile" className="text-sm font-medium relative inline-flex items-center gap-1">
             {user.username}{" "}
             <span className="text-indigo-600 font-bold">{user.points_balance} נקודות</span>
+            {pendingVisits.length > 0 && (
+              <span className="inline-block w-2 h-2 rounded-full bg-red-500 mb-2" title="יש דירוגים ממתינים" />
+            )}
           </Link>
           <button onClick={logout} className="text-sm text-gray-500 hover:text-gray-800">
             התנתק

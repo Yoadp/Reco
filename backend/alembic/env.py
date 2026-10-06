@@ -28,7 +28,7 @@ def run_migrations_offline():
 
 OUR_TABLES = {
     "places", "data_sources", "users", "recommendations", "votes", "points_transactions",
-    "place_ratings",
+    "place_ratings", "user_visits",
 }
 
 

@@ -56,6 +56,7 @@ function ScoreRing({ score }: { score: number }) {
 }
 
 export default function AISummaryCard({ placeSlug }: Props) {
+  const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [freeText, setFreeText] = useState("");
   const [result, setResult] = useState<AISummary | null>(null);
@@ -98,11 +99,28 @@ export default function AISummaryCard({ placeSlug }: Props) {
     }
   }
 
+  if (!expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        className="w-full flex items-center justify-between bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl px-5 py-3.5 text-right hover:border-indigo-300 transition-colors"
+      >
+        <span className="font-semibold text-gray-700 flex items-center gap-2">
+          <span>✨</span> סיכום AI
+        </span>
+        <span className="text-gray-400 text-sm">▼ לחץ להרחבה</span>
+      </button>
+    );
+  }
+
   return (
     <section className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-5">
-      <h2 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2">
-        <span className="text-xl">✨</span> סיכום חכם
-      </h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="font-bold text-lg text-gray-800 flex items-center gap-2">
+          <span className="text-xl">✨</span> סיכום חכם
+        </h2>
+        <button onClick={() => setExpanded(false)} className="text-gray-400 text-sm hover:text-gray-600">▲ סגור</button>
+      </div>
 
       {/* Preference chips */}
       <p className="text-xs text-gray-500 mb-2 font-medium">מה מחפשים?</p>

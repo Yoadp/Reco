@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, bearer
 from app.core.database import get_db
 from app.models.rating import PlaceRating
+from app.models.visit import UserVisit
 from app.models.user import User
 from fastapi.security import HTTPAuthorizationCredentials
 
@@ -37,6 +38,16 @@ async def rate_place(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Require at least one recorded visit before allowing a rating
+    visit_check = await db.execute(
+        select(UserVisit).where(
+            UserVisit.user_id == current_user.id,
+            UserVisit.place_id == body.place_id,
+        ).limit(1)
+    )
+    if visit_check.scalar_one_or_none() is None:
+        raise HTTPException(status_code=403, detail="visit_required")
+
     stmt = (
         pg_insert(PlaceRating)
         .values(
@@ -51,6 +62,19 @@ async def rate_place(
         )
     )
     await db.execute(stmt)
+
+    # Mark the most recent unrated visit as rated
+    unrated = await db.execute(
+        select(UserVisit).where(
+            UserVisit.user_id == current_user.id,
+            UserVisit.place_id == body.place_id,
+            UserVisit.rated == False,  # noqa: E712
+        ).order_by(UserVisit.visited_at.desc()).limit(1)
+    )
+    visit = unrated.scalar_one_or_none()
+    if visit:
+        visit.rated = True
+
     await db.commit()
 
 

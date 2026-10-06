@@ -46,6 +46,7 @@ function RestaurantsPage() {
   const [nlp, setNlp] = useState(initialNlp);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedSub, setSelectedSub] = useState<string | null>(null);
+  const [cityFilter, setCityFilter] = useState<string>("");
 
   // Debounce: fire fast SQL search 400ms after user stops typing (no NLP)
   useEffect(() => {
@@ -63,11 +64,12 @@ function RestaurantsPage() {
     : undefined;
 
   const { data: places = [], isLoading } = useQuery({
-    queryKey: ["places", search, cuisineFilter, nlp],
+    queryKey: ["places", search, cuisineFilter, cityFilter, nlp],
     queryFn: () =>
       searchPlaces({
         q: search || undefined,
         cuisine: cuisineFilter,
+        city: cityFilter || undefined,
         nlp: nlp || undefined,
       }),
   });
@@ -148,9 +150,32 @@ function RestaurantsPage() {
         </button>
       </form>
 
+      {/* City filter chips */}
+      <div className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-4 px-4 scrollbar-hide">
+        {["תל אביב","רמת גן","גבעתיים","בני ברק","פתח תקווה","ראשון לציון","חולון","בת ים","הרצליה","רעננה","כפר סבא","הוד השרון","נתניה","רחובות","נס ציונה","מודיעין"].map(city => (
+          <button
+            key={city}
+            onClick={() => setCityFilter(cityFilter === city ? "" : city)}
+            className={`shrink-0 text-sm px-3 py-1.5 rounded-full border transition-colors ${
+              cityFilter === city
+                ? "bg-indigo-600 text-white border-indigo-600"
+                : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:text-indigo-600"
+            }`}
+          >
+            {city}
+          </button>
+        ))}
+      </div>
+
       {/* Active filter label */}
-      {(cuisineFilter || search) && (
+      {(cuisineFilter || search || cityFilter) && (
         <div className="mb-4 flex items-center gap-2 flex-wrap">
+          {cityFilter && (
+            <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-medium">
+              📍 {cityFilter}
+              <button onClick={() => setCityFilter("")} className="mr-1.5 opacity-60 hover:opacity-100">×</button>
+            </span>
+          )}
           {cuisineFilter && (
             <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-medium">
               {cuisineFilter}
