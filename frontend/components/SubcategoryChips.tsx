@@ -24,10 +24,10 @@ export default function SubcategoryChips({ categoryId, selected, onSelect }: Pro
             key={sub.id}
             onClick={() => onSelect(isActive ? null : sub.id)}
             className={`
-              shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all
+              shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-all duration-150
               ${isActive
-                ? `bg-gradient-to-r ${category.gradient} ${category.textColor} shadow-sm border border-current/20`
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"}
+                ? `${category.solidActive} shadow-md scale-105`
+                : "bg-white text-gray-600 border border-gray-200 hover:border-gray-400 hover:text-gray-800"}
             `}
           >
             {sub.label}

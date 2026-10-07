@@ -130,3 +130,36 @@ export const getPlaceRating = (placeId: string) =>
 
 export const ratePlace = (placeId: string, score: number) =>
   api.post("/ratings", { place_id: placeId, score }).then((r) => r.data);
+
+// ---- Menu ----
+
+export interface MenuItem {
+  id: string;
+  name: string;
+  price_ils: number | null;
+  description: string | null;
+  category: string | null;
+  source: string | null;
+}
+
+export const getPlaceMenu = (slug: string) =>
+  api.get<MenuItem[]>(`/places/${slug}/menu`).then((r) => r.data);
+
+// ---- Smart Search ----
+
+export interface ParsedQuery {
+  dish: string | null;
+  cuisine: string | null;
+  price_min_ils: number | null;
+  price_max_ils: number | null;
+  city: string | null;
+}
+
+export interface SmartSearchResult {
+  exact: Place[];
+  similar: Place[];
+  parsed: ParsedQuery;
+}
+
+export const smartSearchPlaces = (q: string, city?: string) =>
+  api.get<SmartSearchResult>("/places/smart", { params: { q, city: city || undefined } }).then((r) => r.data);

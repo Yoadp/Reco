@@ -35,6 +35,7 @@ class Place(Base):
 
     sources: Mapped[List["DataSource"]] = relationship("DataSource", back_populates="place", cascade="all, delete-orphan")
     recommendations: Mapped[List["Recommendation"]] = relationship("Recommendation", back_populates="place")
+    menu_items: Mapped[List["MenuItem"]] = relationship("MenuItem", back_populates="place", cascade="all, delete-orphan")  # type: ignore[name-defined]
 
 
 class DataSource(Base):

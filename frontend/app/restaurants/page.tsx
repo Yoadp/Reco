@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { searchPlaces } from "@/lib/api";
+import { searchPlaces, smartSearchPlaces, type SmartSearchResult } from "@/lib/api";
 import CategoryRow from "@/components/CategoryRow";
 import SubcategoryChips from "@/components/SubcategoryChips";
 import PlaceGrid from "@/components/PlaceGrid";
@@ -22,6 +22,8 @@ const MapView = dynamic(() => import("@/components/MapView"), {
 
 type ViewMode = "grid" | "map";
 
+const PRICE_LABELS = ["", "₪", "₪₪", "₪₪₪", "₪₪₪₪"];
+
 function subcategoryToCuisine(subId: string): string | undefined {
   for (const cat of CATEGORIES) {
     const sub = cat.subcategories.find((s) => s.id === subId);
@@ -38,12 +40,12 @@ function categoryToCuisine(catId: string): string | undefined {
 function RestaurantsPage() {
   const searchParams = useSearchParams();
   const initialQ = searchParams.get("q") ?? "";
-  const initialNlp = searchParams.get("nlp") === "true";
 
   const [view, setView] = useState<ViewMode>("grid");
   const [q, setQ] = useState(initialQ);
-  const [search, setSearch] = useState(initialQ);
-  const [nlp, setNlp] = useState(initialNlp);
+  const [search, setSearch] = useState(initialQ);  // debounced value for fast SQL
+  const [smartResult, setSmartResult] = useState<SmartSearchResult | null>(null);
+  const [smartLoading, setSmartLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedSub, setSelectedSub] = useState<string | null>(null);
   const [cityFilter, setCityFilter] = useState<string>("");
@@ -52,10 +54,13 @@ function RestaurantsPage() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(q);
-      setNlp(false);
+      // Clear smart results when user starts typing a new query
+      if (smartResult && q !== smartResult.parsed.dish && q !== smartResult.parsed.cuisine) {
+        setSmartResult(null);
+      }
     }, 400);
     return () => clearTimeout(timer);
-  }, [q]);
+  }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cuisineFilter = selectedSub
     ? subcategoryToCuisine(selectedSub)
@@ -63,27 +68,48 @@ function RestaurantsPage() {
     ? categoryToCuisine(selectedCategory)
     : undefined;
 
-  const { data: places = [], isLoading } = useQuery({
-    queryKey: ["places", search, cuisineFilter, cityFilter, nlp],
+  // Fast SQL query — used for debounced typing and category filters
+  const { data: fastPlaces = [], isLoading: fastLoading } = useQuery({
+    queryKey: ["places", search, cuisineFilter, cityFilter],
     queryFn: () =>
       searchPlaces({
         q: search || undefined,
         cuisine: cuisineFilter,
         city: cityFilter || undefined,
-        nlp: nlp || undefined,
       }),
+    enabled: !smartResult,  // disable when we have smart results
   });
 
-  function handleSearch(e: React.FormEvent) {
+  async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    setSearch(q);
-    setNlp(true);  // button click / Enter → Groq NLP
+    if (!q.trim()) return;
+    setSmartLoading(true);
+    try {
+      const result = await smartSearchPlaces(q, cityFilter || undefined);
+      setSmartResult(result);
+    } finally {
+      setSmartLoading(false);
+    }
   }
 
   function handleCategorySelect(id: string | null) {
     setSelectedCategory(id);
     setSelectedSub(null);
+    setSmartResult(null);  // category click returns to regular results
   }
+
+  function clearSmartSearch() {
+    setSmartResult(null);
+    setQ("");
+    setSearch("");
+  }
+
+  const isLoading = smartResult ? smartLoading : fastLoading;
+  const allPlaces = smartResult
+    ? [...smartResult.exact, ...smartResult.similar]
+    : fastPlaces;
+
+  const parsed = smartResult?.parsed;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
@@ -100,7 +126,6 @@ function RestaurantsPage() {
                 ? "bg-white shadow text-indigo-600"
                 : "text-gray-500 hover:text-gray-700"
             }`}
-            title="תצוגת רשת"
           >
             ⊞ רשת
           </button>
@@ -111,7 +136,6 @@ function RestaurantsPage() {
                 ? "bg-white shadow text-indigo-600"
                 : "text-gray-500 hover:text-gray-700"
             }`}
-            title="תצוגת מפה"
           >
             🗺️ מפה
           </button>
@@ -123,7 +147,7 @@ function RestaurantsPage() {
         <CategoryRow selected={selectedCategory} onSelect={handleCategorySelect} />
       </div>
 
-      {/* Subcategory chips (when a category is selected) */}
+      {/* Subcategory chips */}
       {selectedCategory && (
         <div className="mb-4">
           <SubcategoryChips
@@ -135,31 +159,32 @@ function RestaurantsPage() {
       )}
 
       {/* Search bar */}
-      <form onSubmit={handleSearch} className="flex gap-2 mb-5">
+      <form onSubmit={handleSearch} className="flex gap-2 mb-4">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="נסה: פסטה בתל אביב, סושי, חומוס יפו..."
+          placeholder="נסה: פסטה ברוטב לימון במחיר 60-80, סושי ברמת גן..."
           className="flex-1 border border-gray-200 bg-gray-50 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-colors"
         />
         <button
           type="submit"
-          className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors shrink-0"
+          disabled={smartLoading}
+          className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors shrink-0 disabled:opacity-60"
         >
-          חיפוש
+          {smartLoading ? "מחפש..." : "חיפוש"}
         </button>
       </form>
 
       {/* City filter chips */}
-      <div className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-4 px-4 scrollbar-hide">
-        {["תל אביב","רמת גן","גבעתיים","בני ברק","פתח תקווה","ראשון לציון","חולון","בת ים","הרצליה","רעננה","כפר סבא","הוד השרון","נתניה","רחובות","נס ציונה","מודיעין"].map(city => (
+      <div className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-4 px-4" style={{ scrollbarWidth: "none" }}>
+        {["תל אביב","יפו","רמת גן","גבעתיים","בני ברק","פתח תקווה","ראשון לציון","חולון","בת ים","הרצליה","רעננה","כפר סבא","הוד השרון","נתניה","רחובות","נס ציונה","מודיעין"].map(city => (
           <button
             key={city}
             onClick={() => setCityFilter(cityFilter === city ? "" : city)}
-            className={`shrink-0 text-sm px-3 py-1.5 rounded-full border transition-colors ${
+            className={`shrink-0 text-sm font-medium px-3.5 py-1.5 rounded-full border transition-all ${
               cityFilter === city
-                ? "bg-indigo-600 text-white border-indigo-600"
-                : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:text-indigo-600"
+                ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                : "bg-white text-gray-600 border-gray-300 hover:border-indigo-400 hover:text-indigo-700"
             }`}
           >
             {city}
@@ -167,8 +192,44 @@ function RestaurantsPage() {
         ))}
       </div>
 
-      {/* Active filter label */}
-      {(cuisineFilter || search || cityFilter) && (
+      {/* Parsed query chips — shown after smart search */}
+      {parsed && (
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          {parsed.dish && (
+            <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-medium">
+              🍽️ {parsed.dish}
+            </span>
+          )}
+          {parsed.cuisine && !parsed.dish && (
+            <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-medium">
+              🍴 {parsed.cuisine}
+            </span>
+          )}
+          {(parsed.price_min_ils || parsed.price_max_ils) && (
+            <span className="text-xs bg-green-50 text-green-700 px-3 py-1 rounded-full font-medium">
+              💰 {parsed.price_min_ils && parsed.price_max_ils
+                ? `${parsed.price_min_ils}–${parsed.price_max_ils} ₪`
+                : parsed.price_max_ils
+                ? `עד ${parsed.price_max_ils} ₪`
+                : `מ-${parsed.price_min_ils} ₪`}
+            </span>
+          )}
+          {parsed.city && (
+            <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-medium">
+              📍 {parsed.city}
+            </span>
+          )}
+          <button
+            onClick={clearSmartSearch}
+            className="text-xs text-gray-400 hover:text-gray-600 px-2"
+          >
+            × נקה
+          </button>
+        </div>
+      )}
+
+      {/* Active filter chips — shown when no smart result */}
+      {!smartResult && (cuisineFilter || search || cityFilter) && (
         <div className="mb-4 flex items-center gap-2 flex-wrap">
           {cityFilter && (
             <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-medium">
@@ -194,15 +255,64 @@ function RestaurantsPage() {
               >×</button>
             </span>
           )}
-          <span className="text-xs text-gray-400">{places.length} תוצאות</span>
+          <span className="text-xs text-gray-400">{fastPlaces.length} תוצאות</span>
         </div>
       )}
 
-      {/* Main content */}
-      {view === "map" ? (
-        <MapView places={places} />
-      ) : (
-        <PlaceGrid places={places} isLoading={isLoading} />
+      {/* Smart search results */}
+      {smartResult && !smartLoading && view === "grid" && (
+        <>
+          {smartResult.exact.length > 0 ? (
+            <section className="mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0" />
+                <h2 className="text-sm font-bold text-gray-800">תוצאות מדויקות</h2>
+                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{smartResult.exact.length}</span>
+              </div>
+              <PlaceGrid places={smartResult.exact} isLoading={false} />
+            </section>
+          ) : (
+            <p className="text-sm text-gray-500 mb-4 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+              לא נמצאו תוצאות מדויקות — הנה מקומות שאולי יתאימו:
+            </p>
+          )}
+
+          {smartResult.similar.length > 0 && (
+            <section className="mb-6">
+              {smartResult.exact.length > 0 && (
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
+                  <h2 className="text-sm font-bold text-gray-600">תוצאות דומות</h2>
+                  <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{smartResult.similar.length}</span>
+                </div>
+              )}
+              <PlaceGrid places={smartResult.similar} isLoading={false} />
+            </section>
+          )}
+
+          {smartResult.exact.length === 0 && smartResult.similar.length === 0 && (
+            <div className="text-center py-12 text-gray-400">
+              <p className="text-lg mb-1">לא נמצאו תוצאות</p>
+              <p className="text-sm">נסה לשנות את החיפוש או לבחור קטגוריה</p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Map view — uses all results regardless of smart/fast */}
+      {view === "map" && <MapView places={allPlaces} />}
+
+      {/* Regular (non-smart) grid results */}
+      {!smartResult && view === "grid" && (
+        <PlaceGrid places={fastPlaces} isLoading={fastLoading} />
+      )}
+
+      {/* Loading spinner for smart search */}
+      {smartLoading && (
+        <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-400">
+          <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+          <p className="text-sm">מנתח את החיפוש שלך...</p>
+        </div>
       )}
     </div>
   );

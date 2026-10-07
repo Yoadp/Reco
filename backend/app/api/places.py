@@ -3,10 +3,12 @@ from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.services.places import search_places, get_place_by_slug
+from app.models.menu_item import MenuItem
+from app.services.places import search_places, get_place_by_slug, smart_search_places
 
 router = APIRouter(prefix="/places", tags=["places"])
 
@@ -48,6 +50,35 @@ class PlaceDetailOut(PlaceOut):
     sources: List[DataSourceOut] = []
 
 
+class ParsedQuery(BaseModel):
+    dish: str | None
+    cuisine: str | None
+    price_min_ils: int | None
+    price_max_ils: int | None
+    city: str | None
+
+
+class SmartSearchOut(BaseModel):
+    exact: List[PlaceOut]
+    similar: List[PlaceOut]
+    parsed: ParsedQuery
+
+
+# /places/smart must be registered BEFORE /{slug} to avoid route conflict
+@router.get("/smart", response_model=SmartSearchOut)
+async def smart_search(
+    q: str = Query(..., min_length=1),
+    city: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await smart_search_places(db, q=q, city=city)
+    return SmartSearchOut(
+        exact=result["exact"],
+        similar=result["similar"],
+        parsed=ParsedQuery(**result["parsed"]),
+    )
+
+
 @router.get("", response_model=List[PlaceOut])
 async def list_places(
     q: Optional[str] = Query(None),
@@ -60,6 +91,31 @@ async def list_places(
     db: AsyncSession = Depends(get_db),
 ):
     return await search_places(db, q=q, city=city, cuisine=cuisine, price_range=price_range, limit=limit, offset=offset, nlp=nlp)
+
+
+class MenuItemOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    price_ils: int | None
+    description: str | None
+    category: str | None
+    source: str | None
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/{slug}/menu", response_model=List[MenuItemOut])
+async def get_place_menu(slug: str, db: AsyncSession = Depends(get_db)):
+    place = await get_place_by_slug(db, slug)
+    if not place:
+        raise HTTPException(status_code=404, detail="Place not found")
+    result = await db.execute(
+        select(MenuItem)
+        .where(MenuItem.place_id == place.id)
+        .order_by(MenuItem.category, MenuItem.name)
+    )
+    return list(result.scalars().all())
 
 
 @router.get("/{slug}", response_model=PlaceDetailOut)

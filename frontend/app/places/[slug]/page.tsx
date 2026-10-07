@@ -5,8 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { use } from "react";
 import {
   getPlace, getRecommendations, createRecommendation, vote,
-  getPlaceRating, ratePlace, getPlaceVisits,
-  type Recommendation, type DataSource, type UserVisit,
+  getPlaceRating, ratePlace, getPlaceVisits, getPlaceMenu,
+  type Recommendation, type DataSource, type UserVisit, type MenuItem,
 } from "@/lib/api";
 import PhotoGallery from "@/components/PhotoGallery";
 import AISummaryCard from "@/components/AISummaryCard";
@@ -203,6 +203,91 @@ function VisitSection({ placeId, placeName, visits }: { placeId: string; placeNa
   );
 }
 
+// ─── Menu Section ─────────────────────────────────────────────────────────
+
+const CATEGORY_ORDER = ["ראשונות", "סלטים", "מרקים", "פיצות", "פסטות", "סושי", "עיקריות", "צדדיות", "קינוחים", "שתייה"];
+
+function MenuSection({ slug }: { slug: string }) {
+  const [open, setOpen] = useState(true);
+  const { data: items = [], isLoading } = useQuery({
+    queryKey: ["menu", slug],
+    queryFn: () => getPlaceMenu(slug),
+    enabled: open,
+  });
+
+  const byCategory = items.reduce<Record<string, MenuItem[]>>((acc, item) => {
+    const cat = item.category ?? "אחר";
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(item);
+    return acc;
+  }, {});
+
+  const sortedCats = Object.keys(byCategory).sort(
+    (a, b) => (CATEGORY_ORDER.indexOf(a) + 1 || 99) - (CATEGORY_ORDER.indexOf(b) + 1 || 99)
+  );
+
+  return (
+    <section className="mb-6">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between py-3 group"
+      >
+        <h2 className="font-bold text-base text-gray-800 flex items-center gap-2">
+          🍽️ תפריט
+          {!isLoading && items.length > 0 && (
+            <span className="text-xs font-normal text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{items.length} מנות</span>
+          )}
+        </h2>
+        <span className="text-xs text-gray-400 group-hover:text-indigo-600 transition-colors bg-gray-100 group-hover:bg-indigo-50 px-2.5 py-1 rounded-full">
+          {open ? "▲ סגור" : "▼ הצג"}
+        </span>
+      </button>
+
+      {open && (
+        <div className="border border-gray-100 rounded-2xl overflow-hidden">
+          {isLoading ? (
+            <div className="flex flex-col gap-3 p-4">
+              {[1,2,3].map(i => <div key={i} className="h-8 bg-gray-100 rounded-lg animate-pulse" />)}
+            </div>
+          ) : items.length === 0 ? (
+            <p className="text-sm text-gray-400 p-4 text-center">אין נתוני תפריט זמינים</p>
+          ) : (
+            <div>
+              {sortedCats.map((cat, ci) => (
+                <div key={cat} className={ci > 0 ? "border-t border-gray-100" : ""}>
+                  <div className="px-4 pt-3 pb-1">
+                    <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest">{cat}</span>
+                  </div>
+                  {byCategory[cat].map((item, ii) => (
+                    <div key={item.id}
+                      className={`flex items-center justify-between gap-3 px-4 py-2.5 ${ii < byCategory[cat].length - 1 ? "border-b border-gray-50" : ""}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800">{item.name}</p>
+                        {item.description && (
+                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{item.description}</p>
+                        )}
+                      </div>
+                      {item.price_ils && (
+                        <span className="shrink-0 text-sm font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full">
+                          {item.price_ils} ₪
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+              <p className="text-xs text-gray-400 text-center py-3 border-t border-gray-50">
+                * מחירים משוערים
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────
 
 export default function PlacePage(props: { params: Promise<{ slug: string }> }) {
@@ -362,6 +447,9 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
       <div className="mb-6">
         <AISummaryCard placeSlug={slug} />
       </div>
+
+      {/* Menu */}
+      <MenuSection slug={slug} />
 
       {/* Source Cards */}
       {place.sources && place.sources.length > 0 && (

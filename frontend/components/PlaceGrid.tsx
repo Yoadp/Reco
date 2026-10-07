@@ -7,8 +7,9 @@ import { getPlaceGradient, getPlaceEmoji } from "@/lib/categories";
 const PRICE = ["", "₪", "₪₪", "₪₪₪", "₪₪₪₪"];
 
 function scoreColor(score: number | null): string {
-  if (!score) return "bg-white/70 text-gray-700";
-  if (score >= 4.5) return "bg-green-500 text-white";
+  if (!score) return "bg-gray-200 text-gray-600";
+  if (score >= 4.7) return "bg-green-600 text-white";
+  if (score >= 4.0) return "bg-green-500 text-white";
   if (score >= 3.5) return "bg-amber-500 text-white";
   return "bg-red-500 text-white";
 }
@@ -16,48 +17,42 @@ function scoreColor(score: number | null): string {
 function PlaceCard({ place }: { place: Place }) {
   const gradient = getPlaceGradient(place.cuisine);
   const emoji = getPlaceEmoji(place.cuisine);
-  const sourceCount = place.sources?.length ?? 0;
 
   return (
     <Link
       href={`/places/${place.slug}`}
-      className="block rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-shadow active:scale-[0.98] transition-transform"
+      className="block rounded-2xl overflow-hidden bg-white border border-gray-100 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 active:scale-[0.98]"
     >
-      {/* Top gradient half */}
-      <div className={`relative aspect-square bg-gradient-to-br ${gradient} flex flex-col`}>
-        {/* Score badge top-left */}
+      {/* Gradient header with emoji */}
+      <div className={`relative bg-gradient-to-br ${gradient} flex flex-col items-center justify-center pt-5 pb-3 px-2`}>
+        {/* Score badge */}
         {place.aggregated_score && (
           <span className={`absolute top-2 right-2 text-xs font-bold px-2 py-0.5 rounded-full ${scoreColor(place.aggregated_score)}`}>
             ★ {place.aggregated_score.toFixed(1)}
           </span>
         )}
 
-        {/* Source count badge top-right */}
-        {sourceCount > 0 && (
-          <span className="absolute top-2 left-2 text-xs bg-black/20 text-white px-1.5 py-0.5 rounded-full">
-            {sourceCount} מקורות
-          </span>
-        )}
+        <span className="text-4xl mb-2">{emoji}</span>
+        <h3 className="font-extrabold text-gray-800 text-center text-sm leading-tight line-clamp-2 w-full px-1">
+          {place.name}
+        </h3>
+      </div>
 
-        {/* Emoji + name centered */}
-        <div className="flex-1 flex flex-col items-center justify-center px-2 gap-2 pb-2">
-          <span className="text-5xl">{emoji}</span>
-          <h3 className="font-extrabold text-gray-800 text-center text-sm leading-tight line-clamp-2 w-full px-1">
-            {place.name}
-          </h3>
-        </div>
-
-        {/* Bottom info strip */}
-        <div className="bg-white/60 backdrop-blur-sm px-3 py-2 flex items-center justify-between gap-1">
+      {/* Info strip */}
+      <div className="px-3 py-2.5 flex items-center justify-between gap-1 bg-white">
+        <div className="min-w-0">
           {place.cuisine && place.cuisine.length > 0 && (
-            <span className="text-xs text-gray-600 truncate">{place.cuisine[0]}</span>
+            <span className="text-xs text-gray-500 truncate block">{place.cuisine[0]}</span>
           )}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {place.price_range && (
-              <span className="text-xs text-gray-500 font-medium">{PRICE[place.price_range]}</span>
-            )}
-          </div>
+          {place.address && (
+            <span className="text-xs text-gray-400 truncate block leading-tight mt-0.5">
+              {place.address.split(",")[0]}
+            </span>
+          )}
         </div>
+        {place.price_range && (
+          <span className="text-sm font-semibold text-indigo-500 shrink-0">{PRICE[place.price_range]}</span>
+        )}
       </div>
     </Link>
   );
@@ -73,7 +68,7 @@ export default function PlaceGrid({ places, isLoading }: Props) {
     return (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="aspect-square rounded-2xl bg-gray-100 animate-pulse" />
+          <div key={i} className="rounded-2xl bg-gray-100 animate-pulse h-40" />
         ))}
       </div>
     );

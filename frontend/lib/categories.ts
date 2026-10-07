@@ -9,6 +9,7 @@ export interface Category {
   emoji: string;
   gradient: string;
   textColor: string;
+  solidActive: string; // solid bg + white text for selected chips/tiles
   subcategories: Subcategory[];
 }
 
@@ -19,6 +20,7 @@ export const CATEGORIES: Category[] = [
     emoji: "🥙",
     gradient: "from-amber-100 to-orange-200",
     textColor: "text-amber-800",
+    solidActive: "bg-amber-500 text-white",
     subcategories: [
       { id: "hummus",      label: "חומוס" },
       { id: "falafel",     label: "פלאפל" },
@@ -34,6 +36,7 @@ export const CATEGORIES: Category[] = [
     emoji: "🇮🇱",
     gradient: "from-blue-100 to-sky-200",
     textColor: "text-blue-800",
+    solidActive: "bg-blue-600 text-white",
     subcategories: [
       { id: "israeli",     label: "ישראלי" },
       { id: "gourmet",     label: "גורמה" },
@@ -48,6 +51,7 @@ export const CATEGORIES: Category[] = [
     emoji: "🥩",
     gradient: "from-red-100 to-rose-200",
     textColor: "text-red-800",
+    solidActive: "bg-red-600 text-white",
     subcategories: [
       { id: "steak",       label: "סטייק" },
       { id: "grill",       label: "גריל" },
@@ -62,6 +66,7 @@ export const CATEGORIES: Category[] = [
     emoji: "🍣",
     gradient: "from-rose-100 to-red-200",
     textColor: "text-rose-800",
+    solidActive: "bg-rose-600 text-white",
     subcategories: [
       { id: "sushi",       label: "סושי" },
       { id: "japanese",    label: "יפני" },
@@ -76,6 +81,7 @@ export const CATEGORIES: Category[] = [
     emoji: "🍜",
     gradient: "from-violet-100 to-purple-200",
     textColor: "text-violet-800",
+    solidActive: "bg-violet-600 text-white",
     subcategories: [
       { id: "asian",       label: "אסייתי" },
       { id: "chinese",     label: "סיני" },
@@ -90,6 +96,7 @@ export const CATEGORIES: Category[] = [
     emoji: "🍕",
     gradient: "from-emerald-100 to-green-200",
     textColor: "text-emerald-800",
+    solidActive: "bg-emerald-600 text-white",
     subcategories: [
       { id: "pizza",       label: "פיצה" },
       { id: "pasta",       label: "פסטה" },
@@ -104,6 +111,7 @@ export const CATEGORIES: Category[] = [
     emoji: "🥐",
     gradient: "from-yellow-100 to-amber-100",
     textColor: "text-yellow-800",
+    solidActive: "bg-yellow-500 text-white",
     subcategories: [
       { id: "french",      label: "צרפתי" },
       { id: "greek",       label: "יווני" },
@@ -117,6 +125,7 @@ export const CATEGORIES: Category[] = [
     emoji: "🐟",
     gradient: "from-sky-100 to-cyan-200",
     textColor: "text-sky-800",
+    solidActive: "bg-sky-600 text-white",
     subcategories: [
       { id: "mediterranean", label: "ים תיכוני" },
       { id: "seafood",     label: "פירות ים" },
@@ -130,6 +139,7 @@ export const CATEGORIES: Category[] = [
     emoji: "🍺",
     gradient: "from-orange-100 to-amber-200",
     textColor: "text-orange-800",
+    solidActive: "bg-orange-600 text-white",
     subcategories: [
       { id: "bar",         label: "בר" },
       { id: "pub",         label: "פאב" },
@@ -144,6 +154,7 @@ export const CATEGORIES: Category[] = [
     emoji: "☕",
     gradient: "from-stone-100 to-amber-100",
     textColor: "text-stone-700",
+    solidActive: "bg-stone-600 text-white",
     subcategories: [
       { id: "coffee",      label: "קפה" },
       { id: "breakfast-cafe", label: "ארוחת בוקר" },
@@ -158,6 +169,7 @@ export const CATEGORIES: Category[] = [
     emoji: "🌮",
     gradient: "from-orange-100 to-amber-200",
     textColor: "text-orange-800",
+    solidActive: "bg-orange-500 text-white",
     subcategories: [
       { id: "taco",        label: "טאקו" },
       { id: "burrito",     label: "בוריטו" },
@@ -171,6 +183,7 @@ export const CATEGORIES: Category[] = [
     emoji: "🍔",
     gradient: "from-yellow-100 to-amber-200",
     textColor: "text-amber-800",
+    solidActive: "bg-amber-600 text-white",
     subcategories: [
       { id: "hamburger",   label: "המבורגר" },
       { id: "fast-food",   label: "מזון מהיר" },
