@@ -338,6 +338,26 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
         <VisitSection placeId={place.id} placeName={place.name} visits={visits} />
       </div>
 
+      {/* Featured review — best-confidence source */}
+      {(() => {
+        const best = place.sources
+          ?.filter(s => s.excerpt && s.excerpt.length > 30)
+          .sort((a, b) => b.confidence - a.confidence)[0];
+        if (!best) return null;
+        const style = SOURCE_STYLES[best.source_type] ?? SOURCE_STYLES.article;
+        return (
+          <div className="mb-6 relative bg-gray-50 border border-gray-100 rounded-2xl px-6 pt-6 pb-4">
+            <span className="absolute top-3 right-5 text-5xl text-gray-200 font-serif leading-none select-none">&ldquo;</span>
+            <p className="text-gray-800 text-base leading-relaxed font-medium">
+              {best.excerpt}
+            </p>
+            <p className={`text-xs mt-3 font-medium ${style.text}`}>
+              {style.icon} {best.source_name ?? best.source_type}
+            </p>
+          </div>
+        );
+      })()}
+
       {/* AI Summary — collapsed by default */}
       <div className="mb-6">
         <AISummaryCard placeSlug={slug} />

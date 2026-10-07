@@ -183,6 +183,8 @@ async def upsert_place_from_google(db: AsyncSession, data: dict) -> Place:
     place.hours = data.get("opening_hours", place.hours)
     place.photos = data.get("photos", place.photos)
     place.aggregated_score = data.get("rating", place.aggregated_score)
+    if data.get("cuisine") and not place.cuisine:
+        place.cuisine = data["cuisine"]
 
     await db.flush()
     return place

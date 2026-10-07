@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.place import DataSource
 from app.services.places import upsert_place_from_google
+from app.workers.backfill_cuisine import map_type_to_cuisine
 
 PLACES_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 
@@ -39,8 +40,8 @@ def _normalize(raw: dict, city: str) -> dict:
     loc = raw.get("location", {})
     price_str = raw.get("priceLevel", "")
     hours = raw.get("regularOpeningHours", {})
-    # Store just photo names (real URLs fetched later by google_places_photos worker)
     photos = [p["name"] for p in raw.get("photos", [])[:5] if "name" in p]
+    type_text = raw.get("primaryTypeDisplayName", {}).get("text") if isinstance(raw.get("primaryTypeDisplayName"), dict) else None
 
     return {
         "place_id":              raw.get("id", ""),
@@ -55,6 +56,7 @@ def _normalize(raw: dict, city: str) -> dict:
         "rating":                raw.get("rating"),
         "price_level":           PRICE_MAP.get(price_str),
         "photos":                photos if photos else None,
+        "cuisine":               map_type_to_cuisine(type_text) or ["ישראלי"],
     }
 
 
