@@ -141,8 +141,10 @@ class MenuItemOut(BaseModel):
 _avail_cache: dict[str, tuple[float, list[str]]] = {}
 _AVAIL_CACHE_TTL = 30 * 60  # 30 minutes
 
-# Discovered URL cache: slug → url (None = searched but not found)
-_url_discover_cache: dict[str, str | None] = {}
+# Discovered URL cache: slug → (timestamp, url)
+# None entries expire after 1 hour so transient failures are retried.
+_URL_DISCOVER_CACHE_TTL_MISS = 60 * 60  # 1 hour for not-found
+_url_discover_cache: dict[str, tuple[float, str | None]] = {}
 
 _INITIAL_STATE_RE = re.compile(r'window\.__INITIAL_STATE__\s*=\s*(\{)')
 _ONTOPO_VENUE_ID_RE = re.compile(r'/he/il/[^/]+/page/(\d+)')
@@ -224,11 +226,14 @@ async def _discover_ontopo_url(slug: str, place_name: str, city: str | None) -> 
     import json as _json
 
     if slug in _url_discover_cache:
-        return _url_discover_cache[slug]
+        ts, cached = _url_discover_cache[slug]
+        # Keep a found URL forever; expire a miss after 1 hour so failures are retried
+        if cached is not None or time.time() - ts < _URL_DISCOVER_CACHE_TTL_MISS:
+            return cached
 
     city_slug = _ONTOPO_CITY_SLUGS.get(city or "")
     if not city_slug:
-        _url_discover_cache[slug] = None
+        _url_discover_cache[slug] = (time.time(), None)
         return None
 
     try:
@@ -240,12 +245,12 @@ async def _discover_ontopo_url(slug: str, place_name: str, city: str | None) -> 
             # Fetch city listing to get venue IDs from HTML links
             r = await client.get(f"https://ontopo.com/he/il/{city_slug}")
             if r.status_code != 200:
-                _url_discover_cache[slug] = None
+                _url_discover_cache[slug] = (time.time(), None)
                 return None
 
             venue_ids = list(dict.fromkeys(_ONTOPO_VENUE_ID_RE.findall(r.text)))[:20]
             if not venue_ids:
-                _url_discover_cache[slug] = None
+                _url_discover_cache[slug] = (time.time(), None)
                 return None
 
             # Fetch venue pages in parallel; only working pages return a name
@@ -266,13 +271,13 @@ async def _discover_ontopo_url(slug: str, place_name: str, city: str | None) -> 
 
             if best_vid and best_score >= 0.45:
                 found = f"https://ontopo.com/he/il/{city_slug}/page/{best_vid}"
-                _url_discover_cache[slug] = found
+                _url_discover_cache[slug] = (time.time(), found)
                 return found
 
     except Exception:
         pass
 
-    _url_discover_cache[slug] = None
+    _url_discover_cache[slug] = (time.time(), None)
     return None
 
 
@@ -370,7 +375,7 @@ async def get_place_availability(
     date_str = target_date or date.today().isoformat()
     cache_key = f"{slug}:{date_str}:{party_size}"
 
-    # Return cached result if fresh
+    # Return cached result if fresh — use the current stored URL (may have been updated by prior discovery)
     if cache_key in _avail_cache:
         fetched_at, cached_slots = _avail_cache[cache_key]
         if time.time() - fetched_at < _AVAIL_CACHE_TTL:
@@ -400,6 +405,9 @@ async def get_place_availability(
             discovered = await _discover_ontopo_url(slug, place.name, place.city)
             if discovered and discovered != venue_url:
                 venue_url = discovered
+                # Persist to DB so next page load uses the correct URL without re-discovery
+                ontopo_source.url = discovered
+                await db.flush()
                 try:
                     slots, status = await _fetch_slots(venue_url)
                     got_valid_response = (status == 200)

@@ -379,13 +379,16 @@ function AvailabilityChip({ hours }: { hours: Record<string, unknown> | null }) 
 
 // ─── Ontopo Slots Section ──────────────────────────────────────────────────
 
-function OntopoSlots({ slug, venueUrl }: { slug: string; venueUrl: string }) {
+function OntopoSlots({ slug, fallbackUrl }: { slug: string; fallbackUrl: string }) {
   const todayIso = new Date().toISOString().split("T")[0];
   const { data, isLoading } = useQuery({
     queryKey: ["availability", slug, todayIso],
     queryFn: () => getAvailability(slug, 2, todayIso),
     staleTime: 30 * 60 * 1000,
   });
+
+  // Always use the live venue URL discovered by the backend; fall back to stored URL only if not yet fetched
+  const liveUrl = data?.venue_url ?? fallbackUrl;
 
   if (isLoading) {
     return (
@@ -401,7 +404,7 @@ function OntopoSlots({ slug, venueUrl }: { slug: string; venueUrl: string }) {
     return (
       <div className="mb-4 text-sm text-gray-400 flex items-center gap-2">
         <span>🗓</span> אין מקומות פנויים להיום
-        <a href={venueUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:underline text-xs">בדוק שוב ב-Ontopo ↗</a>
+        <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:underline text-xs">בדוק שוב ב-Ontopo ↗</a>
       </div>
     );
   }
@@ -413,7 +416,7 @@ function OntopoSlots({ slug, venueUrl }: { slug: string; venueUrl: string }) {
         {slots.map(slot => (
           <a
             key={slot}
-            href={venueUrl}
+            href={liveUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center text-sm font-semibold px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
@@ -422,7 +425,7 @@ function OntopoSlots({ slug, venueUrl }: { slug: string; venueUrl: string }) {
           </a>
         ))}
         <a
-          href={venueUrl}
+          href={liveUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center text-xs text-gray-400 hover:text-indigo-600 px-2 py-1.5"
@@ -445,11 +448,6 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
   const [showTipForm, setShowTipForm] = useState(false);
   const [bookingModal, setBookingModal] = useState<{ source: DataSource } | null>(null);
 
-  function handleBookingClick(source: DataSource) {
-    if (source.url) window.open(source.url, "_blank");
-    setBookingModal({ source });
-  }
-
   const { data: place, isLoading } = useQuery({
     queryKey: ["place", slug],
     queryFn: () => getPlace(slug),
@@ -465,6 +463,16 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
     queryKey: ["visits", place?.id],
     queryFn: () => getPlaceVisits(place!.id),
     enabled: !!place && isLoggedIn(),
+  });
+
+  // Start availability fetch as soon as place is loaded (Ontopo IDs go stale; discovery fixes them)
+  const todayIso = new Date().toISOString().split("T")[0];
+  const hasOntopo = !!place?.sources?.some(s => s.source_type === "ontopo" && s.url);
+  const { data: availData, isLoading: isAvailLoading } = useQuery({
+    queryKey: ["availability", slug, todayIso],
+    queryFn: () => getAvailability(slug, 2, todayIso),
+    enabled: hasOntopo,
+    staleTime: 30 * 60 * 1000,
   });
 
   const addRec = useMutation({
@@ -491,6 +499,18 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
   const menuLinkSource = place.sources?.find(s => MENU_LINK_TYPES.has(s.source_type) && s.url) ?? null;
   const ontopoSource = place.sources?.find(s => s.source_type === "ontopo" && s.url) ?? null;
   const pendingVisitForBanner = visits.find(v => !v.rated && isPastOrToday(v.visit_date));
+
+  // Best reservation URL: discovered live Ontopo URL → restaurant website → stored Ontopo URL
+  const liveOntopoUrl =
+    availData?.venue_url && availData.venue_url !== ontopoSource?.url
+      ? availData.venue_url
+      : undefined;
+  const reservationUrl = liveOntopoUrl ?? place.website ?? ontopoSource?.url ?? null;
+
+  function handleBookingClick(source: DataSource) {
+    if (reservationUrl) window.open(reservationUrl, "_blank");
+    setBookingModal({ source });
+  }
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
@@ -534,12 +554,13 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
 
         {/* Action bar */}
         <div className="flex flex-wrap gap-2">
-          {reservationSource && (
+          {(reservationSource || ontopoSource) && (
             <button
-              onClick={() => handleBookingClick(reservationSource)}
-              className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+              onClick={() => handleBookingClick(reservationSource ?? ontopoSource!)}
+              disabled={isAvailLoading && hasOntopo}
+              className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-60 disabled:cursor-wait"
             >
-              🗓 הזמן מקום
+              {isAvailLoading && hasOntopo ? "⏳ מחפש..." : "🗓 הזמן מקום"}
             </button>
           )}
           {place.lat && place.lng && (
@@ -582,7 +603,7 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
         {/* Ontopo real-time slots */}
         {ontopoSource?.url && (
           <div className="mt-3">
-            <OntopoSlots slug={slug} venueUrl={ontopoSource.url} />
+            <OntopoSlots slug={slug} fallbackUrl={ontopoSource.url} />
           </div>
         )}
       </div>

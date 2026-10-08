@@ -20,3 +20,5 @@
 {"input": "המבורגר כפול", "output": "{\"city\": null, \"cuisine\": \"בשר\", \"dish\": \"המבורגר כפול\", \"price_min_ils\": null, \"price_max_ils\": null, \"party_size\": null, \"open_at_day\": null, \"open_at_hour\": null}"}
 {"input": "עוף קארי", "output": "{\"city\": null, \"cuisine\": \"הודי\", \"dish\": \"עוף קארי\", \"price_min_ils\": null, \"price_max_ils\": null, \"party_size\": null, \"open_at_day\": null, \"open_at_hour\": null}"}
 {"input": "שולחן ל2 למסעדה עם פיצה פפרוני להיום בערב", "output": "{\"city\": null, \"cuisine\": \"איטלקי\", \"dish\": \"פיצה פפרוני\", \"price_min_ils\": null, \"price_max_ils\": null, \"party_size\": 2, \"open_at_day\": 4, \"open_at_hour\": 19}"}
+{"input": "ספגטי לימוני", "output": "{\"city\": null, \"cuisine\": \"איטלקי\", \"dish\": \"ספגטי לימוני\", \"price_min_ils\": null, \"price_max_ils\": null, \"party_size\": null, \"open_at_day\": null, \"open_at_hour\": null}"}
+{"input": "ספגטי לימוני ל2 אנשים מחר בערב", "output": "{\"city\": null, \"cuisine\": \"איטלקי\", \"dish\": \"ספגטי לימוני\", \"price_min_ils\": null, \"price_max_ils\": null, \"party_size\": 2, \"open_at_day\": 5, \"open_at_hour\": 19}"}
