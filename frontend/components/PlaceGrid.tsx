@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useCallback } from "react";
-import { type Place, savePlace, unsavePlace } from "@/lib/api";
+import { type Place, savePlace, unsavePlace, photoUrl } from "@/lib/api";
 import { getPlaceGradient, getPlaceEmoji } from "@/lib/categories";
 
 const PRICE = ["", "₪", "₪₪", "₪₪₪", "₪₪₪₪"];
@@ -73,6 +73,7 @@ interface PlaceCardProps {
 function PlaceCard({ place, savedIds, isLoggedIn, userLat, userLng, onSaveToggle }: PlaceCardProps) {
   const gradient = getPlaceGradient(place.cuisine);
   const emoji = getPlaceEmoji(place.cuisine);
+  const photo = photoUrl(place.photos?.[0]);
   const openStatus = isOpenNow(place.hours);
   const dist = userLat != null && userLng != null ? distanceKm(userLat, userLng, place.lat, place.lng) : null;
   const isSaved = savedIds?.has(place.id) ?? false;
@@ -104,8 +105,35 @@ function PlaceCard({ place, savedIds, isLoggedIn, userLat, userLng, onSaveToggle
       href={`/places/${place.slug}`}
       className="block rounded-2xl overflow-hidden bg-white border border-gray-100 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 active:scale-[0.98]"
     >
-      {/* Gradient header with emoji */}
-      <div className={`relative bg-gradient-to-br ${gradient} flex flex-col items-center justify-center pt-5 pb-3 px-2`}>
+      {/* Photo or gradient header */}
+      <div className="relative h-32">
+        {photo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={photo}
+            alt={place.name}
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              const target = e.currentTarget;
+              target.style.display = "none";
+              const fallback = target.nextElementSibling as HTMLElement | null;
+              if (fallback) fallback.style.display = "flex";
+            }}
+          />
+        ) : null}
+        {/* Fallback gradient (always rendered, hidden when photo loads) */}
+        <div
+          className={`absolute inset-0 bg-gradient-to-br ${gradient} flex flex-col items-center justify-center`}
+          style={{ display: photo ? "none" : "flex" }}
+        >
+          <span className="text-4xl mb-1">{emoji}</span>
+        </div>
+
+        {/* Dark overlay for photo cards so badges are readable */}
+        {photo && (
+          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/20" />
+        )}
+
         {/* Score badge */}
         {place.aggregated_score && (
           <span className={`absolute top-2 right-2 text-xs font-bold px-2 py-0.5 rounded-full ${scoreColor(place.aggregated_score)}`}>
@@ -126,11 +154,24 @@ function PlaceCard({ place, savedIds, isLoggedIn, userLat, userLng, onSaveToggle
           </button>
         )}
 
-        <span className="text-4xl mb-2">{emoji}</span>
-        <h3 className="font-extrabold text-gray-800 text-center text-sm leading-tight line-clamp-2 w-full px-1">
-          {place.name}
-        </h3>
+        {/* Name overlay on photo */}
+        {photo && (
+          <div className="absolute bottom-0 left-0 right-0 px-2.5 pb-2 pt-6">
+            <h3 className="font-extrabold text-white text-sm leading-tight line-clamp-2">
+              {place.name}
+            </h3>
+          </div>
+        )}
       </div>
+
+      {/* Name shown below when no photo */}
+      {!photo && (
+        <div className="px-2.5 pt-2 pb-0">
+          <h3 className="font-extrabold text-gray-800 text-center text-sm leading-tight line-clamp-2">
+            {place.name}
+          </h3>
+        </div>
+      )}
 
       {/* Info strip */}
       <div className="px-3 py-2.5 bg-white">

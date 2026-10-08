@@ -81,24 +81,13 @@ async def fetch_place_data(
 
     print(f"  ✓ נמצא: {display}{' 🌐' if website else ''} — {len(photos_data)} תמונות")
 
-    urls: list[str] = []
-    for ph in photos_data:
-        photo_name = ph.get("name")
-        if not photo_name:
-            continue
-        pr = await client.get(
-            f"{BASE}/{photo_name}/media",
-            params={"maxWidthPx": "800", "key": api_key, "skipHttpRedirect": "true"},
-            headers={"Referer": "http://localhost:3000"},
-        )
-        uri = pr.json().get("photoUri")
-        if uri:
-            urls.append(uri)
-
-    return {"photos": urls, "website": website}
+    # Store the reference name (e.g. "places/ChIJ.../photos/AXCi2y...")
+    # These never expire. The frontend constructs the URL using the public API key.
+    refs = [ph["name"] for ph in photos_data if ph.get("name")]
+    return {"photos": refs, "website": website}
 
 
-async def run(slug_filter: str | None = None):
+async def run(slug_filter: str | None = None, refresh: bool = False):
     api_key = settings.google_places_api_key
     if not api_key:
         print("GOOGLE_PLACES_API_KEY לא מוגדר ב-.env")
@@ -111,17 +100,19 @@ async def run(slug_filter: str | None = None):
         result = await db.execute(stmt)
         places = result.scalars().all()
 
+        refreshed = skipped = 0
         async with httpx.AsyncClient(timeout=20.0) as client:
             for place in places:
                 has_photos = bool(place.photos)
                 has_website = bool(place.website)
-                if has_photos and has_website and not slug_filter:
-                    print(f"  ✓ {place.name} — כבר יש תמונות ואתר, מדלג")
+                # Skip only when we already have both and not forcing a refresh
+                if has_photos and has_website and not slug_filter and not refresh:
+                    skipped += 1
                     continue
                 print(f"מחפש: {place.name}")
                 data = await fetch_place_data(client, place.name, place.city, api_key)
                 updates: dict = {}
-                if data["photos"] and not has_photos:
+                if data["photos"]:
                     updates["photos"] = data["photos"]
                     print(f"    נשמרו {len(data['photos'])} תמונות")
                 if data["website"] and not has_website:
@@ -129,13 +120,15 @@ async def run(slug_filter: str | None = None):
                     print(f"    אתר: {data['website']}")
                 if updates:
                     await db.execute(update(Place).where(Place.id == place.id).values(**updates))
+                    await db.commit()
+                    refreshed += 1
 
-        await db.commit()
-    print("סיום.")
+    print(f"סיום. רוענן: {refreshed}, דולג: {skipped}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--slug", default=None)
+    parser.add_argument("--refresh", action="store_true", help="Force-refresh photos for all places (URLs expire)")
     args = parser.parse_args()
-    asyncio.run(run(args.slug))
+    asyncio.run(run(slug_filter=args.slug, refresh=args.refresh))

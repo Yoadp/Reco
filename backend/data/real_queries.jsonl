@@ -14,3 +14,9 @@
 {"input": "פסטה לימון ב60 שקל", "output": "{\"city\": null, \"cuisine\": \"איטלקי\", \"dish\": \"פסטה לימון\", \"price_min_ils\": 60, \"price_max_ils\": 60}"}
 {"input": "פסטה לימון", "output": "{\"city\": null, \"cuisine\": \"איטלקי\", \"dish\": \"פסטה לימון\", \"price_min_ils\": null, \"price_max_ils\": null}"}
 {"input": "פסטה לימון בתל אביב", "output": "{\"city\": \"תל אביב\", \"cuisine\": \"איטלקי\", \"dish\": \"פסטה לימון\", \"price_min_ils\": null, \"price_max_ils\": null}"}
+{"input": "פסטה לימון היום בערב", "output": "{\"city\": null, \"cuisine\": \"איטלקי\", \"dish\": \"פסטה לימון\", \"price_min_ils\": null, \"price_max_ils\": null, \"party_size\": null, \"open_at_day\": 4, \"open_at_hour\": 19}"}
+{"input": "פסטה לימון במודיעין", "output": "{\"city\": \"מודיעין\", \"cuisine\": \"איטלקי\", \"dish\": \"פסטה לימון\", \"price_min_ils\": null, \"price_max_ils\": null, \"party_size\": null, \"open_at_day\": null, \"open_at_hour\": null}"}
+{"input": "פסטה לימון במודיעין", "output": "{\"city\": \"מודיעין\", \"cuisine\": \"איטלקי\", \"dish\": \"פסטה לימון\", \"price_min_ils\": null, \"price_max_ils\": null, \"party_size\": null, \"open_at_day\": null, \"open_at_hour\": null}"}
+{"input": "המבורגר כפול", "output": "{\"city\": null, \"cuisine\": \"בשר\", \"dish\": \"המבורגר כפול\", \"price_min_ils\": null, \"price_max_ils\": null, \"party_size\": null, \"open_at_day\": null, \"open_at_hour\": null}"}
+{"input": "עוף קארי", "output": "{\"city\": null, \"cuisine\": \"הודי\", \"dish\": \"עוף קארי\", \"price_min_ils\": null, \"price_max_ils\": null, \"party_size\": null, \"open_at_day\": null, \"open_at_hour\": null}"}
+{"input": "שולחן ל2 למסעדה עם פיצה פפרוני להיום בערב", "output": "{\"city\": null, \"cuisine\": \"איטלקי\", \"dish\": \"פיצה פפרוני\", \"price_min_ils\": null, \"price_max_ils\": null, \"party_size\": 2, \"open_at_day\": 4, \"open_at_hour\": 19}"}

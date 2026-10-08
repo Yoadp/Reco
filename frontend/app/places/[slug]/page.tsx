@@ -15,7 +15,7 @@ import BookingConfirmModal from "@/components/BookingConfirmModal";
 
 const PRICE = ["", "₪", "₪₪", "₪₪₪", "₪₪₪₪"];
 
-const BOOKING_SOURCES = new Set(["menu", "tabit", "ontopo", "wolt"]);
+const RESERVATION_SOURCE_PRIORITY = ["tabit", "ontopo"] as const;
 const MENU_LINK_TYPES = new Set(["menu_link"]);
 
 function scoreColor(n: number) {
@@ -484,7 +484,10 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
   if (isLoading) return <div className="p-8 text-center text-gray-400">טוען...</div>;
   if (!place) return <div className="p-8 text-center text-gray-400">המקום לא נמצא.</div>;
 
-  const bookingSources = place.sources?.filter(s => BOOKING_SOURCES.has(s.source_type) && s.url) ?? [];
+  const reservationSource =
+    RESERVATION_SOURCE_PRIORITY
+      .flatMap(type => place.sources?.filter(s => s.source_type === type && s.url) ?? [])
+      [0] ?? null;
   const menuLinkSource = place.sources?.find(s => MENU_LINK_TYPES.has(s.source_type) && s.url) ?? null;
   const ontopoSource = place.sources?.find(s => s.source_type === "ontopo" && s.url) ?? null;
   const pendingVisitForBanner = visits.find(v => !v.rated && isPastOrToday(v.visit_date));
@@ -531,9 +534,9 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
 
         {/* Action bar */}
         <div className="flex flex-wrap gap-2">
-          {bookingSources.length > 0 && (
+          {reservationSource && (
             <button
-              onClick={() => handleBookingClick(bookingSources[0])}
+              onClick={() => handleBookingClick(reservationSource)}
               className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
             >
               🗓 הזמן מקום
@@ -596,11 +599,15 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
         <VisitSection placeId={place.id} placeName={place.name} visits={visits} />
       </div>
 
-      {/* Featured review — best-confidence source */}
+      {/* Featured review — prefer google_places aggregate, then high review_count, then confidence */}
       {(() => {
+        const excerptScore = (s: DataSource) =>
+          (s.source_type === "google_places" ? 10000 : 0) +
+          (s.review_count ?? 0) * 10 +
+          s.confidence * 100;
         const best = place.sources
           ?.filter(s => s.excerpt && s.excerpt.length > 30)
-          .sort((a, b) => b.confidence - a.confidence)[0];
+          .sort((a, b) => excerptScore(b) - excerptScore(a))[0];
         if (!best) return null;
         const style = SOURCE_STYLES[best.source_type] ?? SOURCE_STYLES.article;
         return (

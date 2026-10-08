@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { photoUrl } from "@/lib/api";
 
 interface Props {
   photos: string[];
@@ -20,22 +21,26 @@ export default function PhotoGallery({ photos, placeName }: Props) {
         className="flex gap-3 overflow-x-auto -mx-4 px-4 pb-2"
         style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
       >
-        {photos.map((url, i) => (
-          <button
-            key={i}
-            onClick={() => setLightbox(url)}
-            className="shrink-0 w-56 h-44 rounded-2xl overflow-hidden relative shadow-sm hover:shadow-md transition-shadow active:scale-[0.98] transition-transform"
-          >
-            <Image
-              src={url}
-              alt={`${placeName} תמונה ${i + 1}`}
-              fill
-              className="object-cover"
-              sizes="224px"
-              unoptimized
-            />
-          </button>
-        ))}
+        {photos.map((ref, i) => {
+          const url = photoUrl(ref);
+          if (!url) return null;
+          return (
+            <button
+              key={i}
+              onClick={() => setLightbox(url)}
+              className="shrink-0 w-56 h-44 rounded-2xl overflow-hidden relative shadow-sm hover:shadow-md transition-shadow active:scale-[0.98] transition-transform"
+            >
+              <Image
+                src={url}
+                alt={`${placeName} תמונה ${i + 1}`}
+                fill
+                className="object-cover"
+                sizes="224px"
+                unoptimized
+              />
+            </button>
+          );
+        })}
       </div>
 
       {/* Lightbox */}
@@ -51,14 +56,16 @@ export default function PhotoGallery({ photos, placeName }: Props) {
             ✕
           </button>
           <div className="relative w-full max-w-lg aspect-[4/3] rounded-2xl overflow-hidden">
-            <Image
-              src={lightbox}
-              alt={placeName}
-              fill
-              className="object-cover"
-              sizes="512px"
-              unoptimized
-            />
+            {lightbox && (
+              <Image
+                src={lightbox}
+                alt={placeName}
+                fill
+                className="object-cover"
+                sizes="512px"
+                unoptimized
+              />
+            )}
           </div>
         </div>
       )}

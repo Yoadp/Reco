@@ -85,7 +85,10 @@ async def list_recommendations(
         stmt = stmt.where(Recommendation.status == status_filter)
     else:
         stmt = stmt.where(Recommendation.status == "approved")
-    stmt = stmt.order_by(Recommendation.upvotes.desc()).limit(limit).offset(offset)
+    stmt = stmt.order_by(
+        (Recommendation.upvotes - Recommendation.downvotes).desc(),
+        Recommendation.created_at.desc(),
+    ).limit(limit).offset(offset)
     result = await db.execute(stmt)
     return list(result.scalars().all())
 
