@@ -6,6 +6,7 @@ export interface Subcategory {
 export interface Category {
   id: string;
   label: string;
+  cuisineQuery?: string; // DB cuisine value to filter by (defaults to label if omitted)
   emoji: string;
   gradient: string;
   textColor: string;
@@ -48,6 +49,7 @@ export const CATEGORIES: Category[] = [
   {
     id: "meat",
     label: "בשר וגריל",
+    cuisineQuery: "בשר",
     emoji: "🥩",
     gradient: "from-red-100 to-rose-200",
     textColor: "text-red-800",
@@ -136,6 +138,7 @@ export const CATEGORIES: Category[] = [
   {
     id: "bar",
     label: "בר ומשקאות",
+    cuisineQuery: "בר",
     emoji: "🍺",
     gradient: "from-orange-100 to-amber-200",
     textColor: "text-orange-800",
@@ -151,6 +154,7 @@ export const CATEGORIES: Category[] = [
   {
     id: "cafe",
     label: "קפה ובוקר",
+    cuisineQuery: "קפה",
     emoji: "☕",
     gradient: "from-stone-100 to-amber-100",
     textColor: "text-stone-700",
@@ -166,6 +170,7 @@ export const CATEGORIES: Category[] = [
   {
     id: "mexican",
     label: "מקסיקני",
+    cuisineQuery: "לטיני",
     emoji: "🌮",
     gradient: "from-orange-100 to-amber-200",
     textColor: "text-orange-800",

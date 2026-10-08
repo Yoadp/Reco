@@ -32,7 +32,7 @@ function subcategoryToCuisine(subId: string): string | undefined {
 
 function categoryToCuisine(catId: string): string | undefined {
   const cat = CATEGORIES.find((c) => c.id === catId);
-  return cat?.label;
+  return cat?.cuisineQuery ?? cat?.label;
 }
 
 function RestaurantsPage() {

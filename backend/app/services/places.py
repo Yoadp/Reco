@@ -567,7 +567,7 @@ async def search_places(
             )
         )
     if cuisine:
-        stmt = stmt.where(Place.cuisine.any(cuisine))
+        stmt = stmt.where(func.array_to_string(Place.cuisine, " ").ilike(f"%{cuisine}%"))
     # Only apply price_range when it came in as a direct query param (not NLP-derived).
     # NLP-derived price is handled by smart_search_places() cascade tiers.
     if price_range:
