@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { use } from "react";
+import { useRouter } from "next/navigation";
 import {
   getPlace, getRecommendations, createRecommendation, vote,
-  getPlaceRating, ratePlace, getPlaceVisits, getPlaceMenu,
+  getPlaceRating, ratePlace, getPlaceVisits, getPlaceMenu, getAvailability,
   type Recommendation, type DataSource, type UserVisit, type MenuItem,
 } from "@/lib/api";
 import PhotoGallery from "@/components/PhotoGallery";
@@ -210,7 +211,7 @@ function VisitSection({ placeId, placeName, visits }: { placeId: string; placeNa
 const CATEGORY_ORDER = ["ראשונות", "סלטים", "מרקים", "פיצות", "פסטות", "סושי", "עיקריות", "צדדיות", "קינוחים", "שתייה"];
 
 function MenuSection({ slug, menuUrl }: { slug: string; menuUrl?: string | null }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["menu", slug],
     queryFn: () => getPlaceMenu(slug),
@@ -301,10 +302,143 @@ function MenuSection({ slug, menuUrl }: { slug: string; menuUrl?: string | null 
   );
 }
 
+// ─── Availability Chip (hours-based, pure frontend) ───────────────────────
+
+function AvailabilityChip({ hours }: { hours: Record<string, unknown> | null }) {
+  if (!hours || !Array.isArray((hours as { periods?: unknown[] }).periods)) return null;
+
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Jerusalem" }));
+  const googleDay = (now.getDay()); // 0=Sun already matches Google's day numbering
+  const curMins = now.getHours() * 60 + now.getMinutes();
+
+  type Period = { open: { day: number; hour: number; minute: number }; close?: { day: number; hour: number; minute: number } };
+  const periods = (hours as { periods: Period[] }).periods;
+
+  let openNow = false;
+  let closeLabel: string | null = null;
+
+  for (const p of periods) {
+    const od = p.open.day;
+    const om = p.open.hour * 60 + p.open.minute;
+    if (!p.close) { openNow = true; break; }
+    const cd = p.close.day;
+    const cm = p.close.hour * 60 + p.close.minute;
+    if (od === cd) {
+      if (googleDay === od && curMins >= om && curMins < cm) {
+        openNow = true;
+        closeLabel = `${String(p.close.hour).padStart(2, "0")}:${String(p.close.minute).padStart(2, "0")}`;
+        break;
+      }
+    } else {
+      // overnight period
+      if (googleDay === od && curMins >= om) { openNow = true; break; }
+      if (googleDay === cd && curMins < cm) {
+        openNow = true;
+        closeLabel = `${String(p.close.hour).padStart(2, "0")}:${String(p.close.minute).padStart(2, "0")}`;
+        break;
+      }
+    }
+  }
+
+  // Find next opening time if closed
+  let nextOpenLabel: string | null = null;
+  if (!openNow) {
+    const upcoming = periods
+      .map(p => ({ day: p.open.day, mins: p.open.hour * 60 + p.open.minute, hour: p.open.hour, minute: p.open.minute }))
+      .sort((a, b) => {
+        const da = ((a.day - googleDay + 7) % 7) * 1440 + a.mins;
+        const db = ((b.day - googleDay + 7) % 7) * 1440 + b.mins;
+        return da - db;
+      });
+    const next = upcoming.find(p => {
+      const dayDiff = (p.day - googleDay + 7) % 7;
+      return dayDiff > 0 || (dayDiff === 0 && p.mins > curMins);
+    });
+    if (next) {
+      const dayDiff = (next.day - googleDay + 7) % 7;
+      const timeStr = `${String(next.hour).padStart(2, "0")}:${String(next.minute).padStart(2, "0")}`;
+      nextOpenLabel = dayDiff === 0 ? `היום ב-${timeStr}` : dayDiff === 1 ? `מחר ב-${timeStr}` : `ב-${timeStr}`;
+    }
+  }
+
+  if (openNow) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-xl border border-green-200 bg-green-50 text-green-700">
+        <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+        פתוח{closeLabel ? ` · סוגר ב-${closeLabel}` : ""}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700">
+      <span className="w-2 h-2 rounded-full bg-red-400 inline-block" />
+      סגור{nextOpenLabel ? ` · נפתח ${nextOpenLabel}` : ""}
+    </span>
+  );
+}
+
+// ─── Ontopo Slots Section ──────────────────────────────────────────────────
+
+function OntopoSlots({ slug, venueUrl }: { slug: string; venueUrl: string }) {
+  const todayIso = new Date().toISOString().split("T")[0];
+  const { data, isLoading } = useQuery({
+    queryKey: ["availability", slug, todayIso],
+    queryFn: () => getAvailability(slug, 2, todayIso),
+    staleTime: 30 * 60 * 1000,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="mb-4 flex gap-2">
+        {[1,2,3].map(i => <div key={i} className="h-9 w-16 bg-gray-100 rounded-xl animate-pulse" />)}
+      </div>
+    );
+  }
+
+  const slots = data?.slots ?? [];
+
+  if (slots.length === 0) {
+    return (
+      <div className="mb-4 text-sm text-gray-400 flex items-center gap-2">
+        <span>🗓</span> אין מקומות פנויים להיום
+        <a href={venueUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:underline text-xs">בדוק שוב ב-Ontopo ↗</a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4">
+      <p className="text-sm font-medium text-gray-600 mb-2">חריצים פנויים הערב:</p>
+      <div className="flex flex-wrap gap-2">
+        {slots.map(slot => (
+          <a
+            key={slot}
+            href={venueUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center text-sm font-semibold px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
+          >
+            {slot}
+          </a>
+        ))}
+        <a
+          href={venueUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center text-xs text-gray-400 hover:text-indigo-600 px-2 py-1.5"
+        >
+          הזמן ↗
+        </a>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────
 
 export default function PlacePage(props: { params: Promise<{ slug: string }> }) {
   const { slug } = use(props.params);
+  const router = useRouter();
   const qc = useQueryClient();
   const [content, setContent] = useState("");
   const [tags, setTags] = useState("");
@@ -352,10 +486,19 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
 
   const bookingSources = place.sources?.filter(s => BOOKING_SOURCES.has(s.source_type) && s.url) ?? [];
   const menuLinkSource = place.sources?.find(s => MENU_LINK_TYPES.has(s.source_type) && s.url) ?? null;
+  const ontopoSource = place.sources?.find(s => s.source_type === "ontopo" && s.url) ?? null;
   const pendingVisitForBanner = visits.find(v => !v.rated && isPastOrToday(v.visit_date));
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
+
+      {/* Back button */}
+      <button
+        onClick={() => router.back()}
+        className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors"
+      >
+        ← חזרה
+      </button>
 
       {/* Photos */}
       {place.photos && place.photos.length > 0 && (
@@ -430,7 +573,15 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
               🌐 אתר
             </a>
           )}
+          <AvailabilityChip hours={place.hours} />
         </div>
+
+        {/* Ontopo real-time slots */}
+        {ontopoSource?.url && (
+          <div className="mt-3">
+            <OntopoSlots slug={slug} venueUrl={ontopoSource.url} />
+          </div>
+        )}
       </div>
 
       {/* Pending visit banner */}

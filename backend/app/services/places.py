@@ -83,35 +83,160 @@ _PRICE_KEYWORDS = {
     "בינוני": (60, 120), "בינונית": (60, 120),
 }
 
+# Time-of-day keywords → hour (24h)
+_TIME_KEYWORDS: list[tuple[str, int]] = [
+    ("הלילה", 21), ("בלילה", 21),
+    ("בערב", 19), ("לערב", 19), ("ערב", 19),
+    ('אחה"צ', 15), ("אחרי הצהריים", 15),
+    ("בצהריים", 12), ("בצהרים", 12), ("צהריים", 12),
+    ("בבוקר", 9), ("בוקר", 9),
+]
+
+# Hebrew day names → Google day index (0=Sun)
+_DAY_KEYWORDS: dict[str, int] = {
+    "ראשון": 0, "שני": 1, "שלישי": 2, "רביעי": 3, "חמישי": 4, "שישי": 5, "שבת": 6,
+}
+
+_PARTY_RE = re.compile(r'ל[\-–]?(\d+)\b')  # "ל2", "ל-4"
+
+# "במסעדה איטלקית" / "מסעדה יפנית" → cuisine
+_CUISINE_MAP = {
+    "איטלקי": "איטלקי", "איטלקית": "איטלקי",
+    "יפני": "יפני", "יפנית": "יפני",
+    "סיני": "סיני", "סינית": "סיני",
+    "הודי": "הודי", "הודית": "הודי",
+    "תאי": "תאי", "תאית": "תאי",
+    "מקסיקני": "מקסיקני", "מקסיקנית": "מקסיקני",
+    "יווני": "יווני", "יוונית": "יווני",
+    "לבנוני": "לבנוני", "לבנונית": "לבנוני",
+    "ים תיכוני": "ים תיכוני", "ים-תיכונית": "ים תיכוני",
+    "ים-תיכוני": "ים תיכוני",
+    "ישראלי": "ישראלי", "ישראלית": "ישראלי",
+    "אמריקאי": "אמריקאי", "אמריקאית": "אמריקאי",
+    "צרפתי": "צרפתי", "צרפתית": "צרפתי",
+    "טורקי": "טורקי", "טורקית": "טורקי",
+    "כשר": "כשר", "כשרה": "כשר", "כשרי": "כשר",
+}
+_CUISINE_PHRASE_RE = re.compile(
+    r'ב?מסעדה\s+(' + '|'.join(re.escape(k) for k in sorted(_CUISINE_MAP, key=len, reverse=True)) + r')',
+)
+
+# Noise words to strip from remaining before using as dish
+_NOISE_WORDS = {
+    "שולחן", "מקום", "מסעדה", "מסעדות", "אוכל", "מאכל",
+    "פתוחה", "פתוח", "אנשים", "להיום", "היום", "אנשים",
+    "ל", "ב", "ה", "של", "עם", "על", "בין",
+}
+_PRICE_NOISE_RE = re.compile(r'\bעד\s+\d+\s+שקל\b|\bעד\s+\d+₪\b|\b\d+\s*-\s*\d+\s*שקל\b', re.UNICODE)
+
 
 def _local_parse_query(q: str) -> dict:
     """
     Best-effort local parse without Groq.
-    Detects city names and simple price keywords from the query text.
+    Detects city, price, cuisine, party size, and time-of-day keywords.
     """
-    result: dict = {"city": None, "cuisine": None, "dish": None, "price_min_ils": None, "price_max_ils": None}
+    result: dict = {
+        "city": None, "cuisine": None, "dish": None,
+        "price_min_ils": None, "price_max_ils": None,
+        "party_size": None, "open_at_day": None, "open_at_hour": None,
+    }
     remaining = q
 
     # City detection
     for city in _KNOWN_CITIES:
         if city in q:
             result["city"] = city
-            # Remove the city and the Hebrew "ב" preposition that precedes it ("ב" = "in")
             remaining = q.replace(city, "").strip()
-            remaining = re.sub(r'\bב$', '', remaining).strip()   # trailing "ב " before city
-            remaining = re.sub(r'^ב\b', '', remaining).strip()   # leading "ב" after city
+            # Strip leading/trailing "ב" preposition left by city removal
+            remaining = re.sub(r'\bב$', '', remaining).strip()
+            remaining = re.sub(r'^ב\b', '', remaining).strip()
             remaining = re.sub(r'\s+', ' ', remaining).strip()
             break
 
-    # Price detection
-    for word, (pmin, pmax) in _PRICE_KEYWORDS.items():
-        if word in remaining:
-            result["price_min_ils"] = pmin
-            result["price_max_ils"] = pmax
-            remaining = remaining.replace(word, "").strip()
-            break
+    # Cuisine phrase detection ("במסעדה איטלקית" etc.)
+    cm = _CUISINE_PHRASE_RE.search(remaining)
+    if cm:
+        result["cuisine"] = _CUISINE_MAP.get(cm.group(1), cm.group(1))
+        remaining = remaining[:cm.start()] + remaining[cm.end():]
+        remaining = re.sub(r'\s+', ' ', remaining).strip()
 
-    # Whatever remains is treated as the dish/food term
+    # Price detection
+    # "עד X שקל" / "X-Y שקל"
+    pm = _PRICE_NOISE_RE.search(remaining)
+    if pm:
+        text = pm.group(0)
+        nums = re.findall(r'\d+', text)
+        if len(nums) == 2:
+            result["price_min_ils"] = int(nums[0])
+            result["price_max_ils"] = int(nums[1])
+        elif len(nums) == 1:
+            result["price_max_ils"] = int(nums[0])
+        remaining = remaining[:pm.start()] + remaining[pm.end():]
+        remaining = re.sub(r'\s+', ' ', remaining).strip()
+    else:
+        for word, (pmin, pmax) in _PRICE_KEYWORDS.items():
+            if word in remaining:
+                result["price_min_ils"] = pmin
+                result["price_max_ils"] = pmax
+                remaining = remaining.replace(word, "").strip()
+                break
+
+    # Party size ("ל2", "ל-4", "לשניים")
+    m = _PARTY_RE.search(remaining)
+    if m:
+        result["party_size"] = int(m.group(1))
+        remaining = (remaining[:m.start()] + remaining[m.end():]).strip()
+    elif "לשניים" in remaining:
+        result["party_size"] = 2
+        remaining = remaining.replace("לשניים", "").strip()
+
+    # Relative day detection — consume the word from remaining
+    now_local = datetime.now(ISRAEL_TZ)
+    today_google = (now_local.weekday() + 1) % 7
+    if "מחר" in remaining:
+        result["open_at_day"] = (today_google + 1) % 7
+        remaining = remaining.replace("מחר", "").strip()
+    else:
+        for rel_word in ["להיום", "היום"]:
+            if rel_word in remaining:
+                result["open_at_day"] = today_google
+                remaining = remaining.replace(rel_word, "").strip()
+                break
+        else:
+            for day_name, day_idx in _DAY_KEYWORDS.items():
+                if day_name in remaining:
+                    result["open_at_day"] = day_idx
+                    remaining = remaining.replace(day_name, "").strip()
+                    break
+
+    # "הלילה" sets both day=today and hour — consume it
+    if "הלילה" in remaining:
+        result["open_at_day"] = today_google
+        result["open_at_hour"] = 21
+        remaining = remaining.replace("הלילה", "").strip()
+    else:
+        # Time-of-day detection
+        for word, hour in _TIME_KEYWORDS:
+            if word in remaining:
+                result["open_at_hour"] = hour
+                remaining = remaining.replace(word, "").strip()
+                break
+
+    # Strip table-booking preamble ("שולחן", "מקום") from start
+    remaining = re.sub(r'^(שולחן|מקום)\s*', '', remaining).strip()
+
+    # Strip trailing "ב" left over from city/phrase removal (e.g. "סושי ב")
+    remaining = re.sub(r'\s+ב$', '', remaining).strip()
+    remaining = re.sub(r'^ב\s+', '', remaining).strip()
+
+    # Remove standalone noise words
+    tokens = remaining.split()
+    tokens = [t for t in tokens if t not in _NOISE_WORDS]
+    remaining = " ".join(tokens).strip()
+
+    # Collapse whitespace
+    remaining = re.sub(r'\s{2,}', ' ', remaining).strip()
+
     if remaining and len(remaining) >= 2:
         result["dish"] = remaining
 
@@ -135,39 +260,36 @@ def _ils_to_price_range(min_ils: float | None, max_ils: float | None) -> int | N
     return 4
 
 
-def is_open_now(hours_json: dict | None) -> bool:
-    """Check if a place is currently open based on Google's regularOpeningHours JSON."""
+def is_open_at(hours_json: dict | None, day: int, hour: int, minute: int = 0) -> bool:
+    """Check if a place is open at a given Google-format day (0=Sun…6=Sat) and time."""
     if not hours_json or "periods" not in hours_json:
         return False
-
-    now = datetime.now(ISRAEL_TZ)
-    # Python weekday(): 0=Mon … 6=Sun → Google: 0=Sun, 1=Mon … 6=Sat
-    google_day = (now.weekday() + 1) % 7
-    current_mins = now.hour * 60 + now.minute
-
+    current_mins = hour * 60 + minute
     for period in hours_json["periods"]:
         open_info = period.get("open", {})
         open_day = open_info.get("day")
         open_mins = open_info.get("hour", 0) * 60 + open_info.get("minute", 0)
-
         close_info = period.get("close")
         if close_info is None:
             return True  # 24/7
-
         close_day = close_info.get("day")
         close_mins = close_info.get("hour", 0) * 60 + close_info.get("minute", 0)
-
         if open_day == close_day:
-            if google_day == open_day and open_mins <= current_mins < close_mins:
+            if day == open_day and open_mins <= current_mins < close_mins:
                 return True
         else:
-            # Spans midnight
-            if google_day == open_day and current_mins >= open_mins:
+            if day == open_day and current_mins >= open_mins:
                 return True
-            if google_day == close_day and current_mins < close_mins:
+            if day == close_day and current_mins < close_mins:
                 return True
-
     return False
+
+
+def is_open_now(hours_json: dict | None) -> bool:
+    """Check if a place is currently open based on Google's regularOpeningHours JSON."""
+    now = datetime.now(ISRAEL_TZ)
+    google_day = (now.weekday() + 1) % 7
+    return is_open_at(hours_json, google_day, now.hour, now.minute)
 
 
 def haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -180,35 +302,51 @@ def haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return 2 * R * math.asin(math.sqrt(a))
 
 
+_TIME_RELATIVE_WORDS = frozenset(["היום", "להיום", "מחר", "הלילה"])
+
+
 async def nlp_parse_query(q: str) -> dict:
     """
     Uses Groq to parse a freeform Hebrew restaurant search query.
-    Returns {city, cuisine, dish, price_min_ils, price_max_ils}.
+    Returns {city, cuisine, dish, price_min_ils, price_max_ils, party_size, open_at_day, open_at_hour}.
     Falls back gracefully on any error.
     """
     key = q.strip().lower()
-    if key in _nlp_cache:
+    # Don't cache time-relative queries — "היום" means different day on different days
+    use_cache = not any(w in key for w in _TIME_RELATIVE_WORDS)
+    if use_cache and key in _nlp_cache:
         return _nlp_cache[key]
+
+    now_local = datetime.now(ISRAEL_TZ)
+    today_google = (now_local.weekday() + 1) % 7
+    tomorrow_google = (today_google + 1) % 7
 
     prompt = f"""אתה מנתח שאילתות חיפוש לאפליקציית מסעדות ישראלית.
 נתח את השאילתה הבאה וחלץ את השדות הבאים:
 - city: שם עיר בעברית אם מוזכר (כגון תל אביב, יפו, חיפה, רמת גן), אחרת null
 - cuisine: קטגוריית מטבח רחבה (כגון איטלקי, יפני, ים תיכוני, בשר, ישראלי), אחרת null
-- dish: שם מנה ספציפית או תיאור אוכל מפורט (כגון פסטה ברוטב לימון, המבורגר כפול, ראמן חריף), אחרת null — שים לב: dish יכול להכיל מספר מילים
-- price_min_ils: המחיר המינימלי בשקלים כמספר שלם אם מוזכר טווח מחיר (כגון "60-80 שקל", "עד 100"), אחרת null
-- price_max_ils: המחיר המקסימלי בשקלים כמספר שלם אם מוזכר טווח מחיר, אחרת null
+- dish: שם מנה ספציפית (כגון פסטה ברוטב לימון, המבורגר כפול, ראמן חריף), אחרת null. אל תכניס ל-dish מילות זמן/יום/סועדים כמו "שולחן ל2 הלילה"
+- price_min_ils: המחיר המינימלי בשקלים כמספר שלם אם מוזכר, אחרת null
+- price_max_ils: המחיר המקסימלי בשקלים כמספר שלם אם מוזכר, אחרת null
+- party_size: מספר סועדים אם מוזכר (כגון "שולחן ל2", "לשניים", "ל-4 אנשים"), אחרת null
+- open_at_day: יום בשבוע בפורמט Google (0=ראשון,1=שני,2=שלישי,3=רביעי,4=חמישי,5=שישי,6=שבת). היום={today_google}, מחר={tomorrow_google}. "שישי"=5, "שבת"=6. אם לא מוזכר יום → null
+- open_at_hour: שעה (0-23) אם מוזכר זמן. "בבוקר"→9, "בצהריים"→12, 'אחה"צ'→15, "בערב"→19, "בלילה"/"הלילה"→21. אם לא מוזכר → null
 
 החזר JSON בלבד ללא markdown:
-{{"city":null,"cuisine":null,"dish":null,"price_min_ils":null,"price_max_ils":null}}
+{{"city":null,"cuisine":null,"dish":null,"price_min_ils":null,"price_max_ils":null,"party_size":null,"open_at_day":null,"open_at_hour":null}}
 
 דוגמאות:
-- "פסטה ברוטב לימון במחיר 60-80" → {{"city":null,"cuisine":"איטלקי","dish":"פסטה ברוטב לימון","price_min_ils":60,"price_max_ils":80}}
-- "סושי ברמת גן עד 120 שקל" → {{"city":"רמת גן","cuisine":"יפני","dish":"סושי","price_min_ils":null,"price_max_ils":120}}
-- "חומוס זול" → {{"city":null,"cuisine":"מזרח תיכוני","dish":"חומוס","price_min_ils":null,"price_max_ils":50}}
+- "פסטה ברוטב לימון במחיר 60-80" → {{"city":null,"cuisine":"איטלקי","dish":"פסטה ברוטב לימון","price_min_ils":60,"price_max_ils":80,"party_size":null,"open_at_day":null,"open_at_hour":null}}
+- "שולחן ל2 להיום בערב במסעדה איטלקית" → {{"city":null,"cuisine":"איטלקי","dish":null,"price_min_ils":null,"price_max_ils":null,"party_size":2,"open_at_day":{today_google},"open_at_hour":19}}
+- "סושי בשישי בצהריים" → {{"city":null,"cuisine":"יפני","dish":"סושי","price_min_ils":null,"price_max_ils":null,"party_size":null,"open_at_day":5,"open_at_hour":12}}
 
 שאילתה: "{q}"
 """
-    _groq_fail = {"city": None, "cuisine": None, "dish": None, "price_min_ils": None, "price_max_ils": None}
+    _groq_fail = {
+        "city": None, "cuisine": None, "dish": None,
+        "price_min_ils": None, "price_max_ils": None,
+        "party_size": None, "open_at_day": None, "open_at_hour": None,
+    }
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
@@ -217,22 +355,23 @@ async def nlp_parse_query(q: str) -> dict:
                 json={
                     "model": GROQ_MODEL,
                     "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 150,
+                    "max_tokens": 200,
                     "temperature": 0.0,
                     "response_format": {"type": "json_object"},
                 },
             )
         if resp.status_code == 429:
-            # Rate-limited — try local model first, then regex fallback
             from app.ml.inference import local_model_parse
             return local_model_parse(q) or _local_parse_query(q)
         resp.raise_for_status()
         parsed = json.loads(resp.json()["choices"][0]["message"]["content"])
-        _nlp_cache[key] = parsed
-        if len(_nlp_cache) > 200:
-            oldest = next(iter(_nlp_cache))
-            del _nlp_cache[oldest]
-        # Teach the local model with every real Groq answer
+        # Ensure new fields have defaults if model didn't return them
+        for k in ("party_size", "open_at_day", "open_at_hour"):
+            parsed.setdefault(k, None)
+        if use_cache:
+            _nlp_cache[key] = parsed
+            if len(_nlp_cache) > 200:
+                del _nlp_cache[next(iter(_nlp_cache))]
         asyncio.get_event_loop().run_in_executor(None, _save_training_example, q, parsed)
         return parsed
     except Exception:
@@ -309,6 +448,7 @@ async def search_places(
     lng: Optional[float] = None,
     radius_km: Optional[float] = None,
     sort: Optional[str] = None,
+    open_at: Optional[tuple[int, int]] = None,  # (google_day, hour)
 ) -> tuple[List[Place], dict[str, list[str]]]:
     # Discovery sort modes bypass regular search — return (places, {}) tuple
     if sort == "trending":
@@ -321,7 +461,7 @@ async def search_places(
         return list(result.scalars().all()), {}
 
     # When post-processing is needed, fetch more rows
-    needs_postprocess = open_now or (lat is not None and lng is not None)
+    needs_postprocess = open_now or open_at is not None or (lat is not None and lng is not None)
     fetch_limit = limit * 6 if needs_postprocess else limit
 
     stmt = select(Place)
@@ -441,6 +581,11 @@ async def search_places(
     if open_now:
         places = [p for p in places if p.hours and is_open_now(p.hours)]
 
+    # Post-process: open_at filter (specific day + hour)
+    if open_at is not None:
+        oa_day, oa_hour = open_at
+        places = [p for p in places if p.hours and is_open_at(p.hours, oa_day, oa_hour)]
+
     # Post-process: distance sort/filter
     if lat is not None and lng is not None:
         with_dist = []
@@ -489,6 +634,14 @@ async def smart_search_places(
     cuisine = parsed.get("cuisine")
     dish = parsed.get("dish")
     price_range = _ils_to_price_range(parsed.get("price_min_ils"), parsed.get("price_max_ils"))
+
+    _open_at_day = parsed.get("open_at_day")
+    _open_at_hour = parsed.get("open_at_hour")
+    open_at: Optional[tuple[int, int]] = (
+        (_open_at_day, _open_at_hour)
+        if _open_at_day is not None and _open_at_hour is not None
+        else None
+    )
 
     exact: List[Place] = []
     similar: List[Place] = []
@@ -545,6 +698,12 @@ async def smart_search_places(
             tier6, _ = await search_places(db, q=dish or cuisine, limit=20)
             _add_to(similar, tier6)
 
+    # Apply open_at filter across all results
+    if open_at is not None:
+        oa_day, oa_hour = open_at
+        exact = [p for p in exact if p.hours and is_open_at(p.hours, oa_day, oa_hour)]
+        similar = [p for p in similar if p.hours and is_open_at(p.hours, oa_day, oa_hour)]
+
     return {
         "exact": exact,
         "similar": similar,
@@ -554,6 +713,9 @@ async def smart_search_places(
             "price_min_ils": parsed.get("price_min_ils"),
             "price_max_ils": parsed.get("price_max_ils"),
             "city": resolved_city,
+            "party_size": parsed.get("party_size"),
+            "open_at_day": _open_at_day,
+            "open_at_hour": _open_at_hour,
         },
     }
 
@@ -605,9 +767,72 @@ async def _search_with_excerpt(
     if price_range:
         stmt = stmt.where(Place.price_range == price_range)
 
-    stmt = stmt.order_by(Place.aggregated_score.desc().nulls_last()).limit(limit)
+    # Fetch more than needed so re-ranking has headroom; trim to limit after.
+    fetch_n = limit * 3 if len(words) >= 2 else limit
+    stmt = stmt.order_by(Place.aggregated_score.desc().nulls_last()).limit(fetch_n)
     result = await db.execute(stmt)
-    return list(result.scalars().all())
+    places = list(result.scalars().all())
+
+    # Re-rank by compound relevance when the dish has 2+ words.
+    # Pure score ordering buries the best match when a high-rated place matches
+    # only one word while a lower-rated one matches the full compound.
+    if len(words) >= 2 and len(places) > 1:
+        place_ids = [p.id for p in places]
+
+        mi_res = await db.execute(
+            select(MenuItem.place_id, MenuItem.name)
+            .where(MenuItem.place_id.in_(place_ids))
+        )
+        menu_by_place: dict[str, list[str]] = {}
+        for pid, name in mi_res.all():
+            menu_by_place.setdefault(str(pid), []).append(name.lower())
+
+        exc_res = await db.execute(
+            select(DataSource.place_id, DataSource.excerpt)
+            .where(DataSource.place_id.in_(place_ids))
+            .where(DataSource.excerpt.isnot(None))
+        )
+        exc_by_place: dict[str, list[str]] = {}
+        for pid, exc in exc_res.all():
+            exc_by_place.setdefault(str(pid), []).append((exc or "").lower())
+
+        kw_low = keyword.lower()
+        words_low = [w.lower() for w in words]
+
+        def _relevance(p: Place) -> float:
+            pid = str(p.id)
+            items = menu_by_place.get(pid, [])
+            excs = exc_by_place.get(pid, [])
+            name = (p.name or "").lower()
+            combined = name + " " + " ".join(items) + " " + " ".join(excs)
+
+            s = 0.0
+            # Full compound in name / menu item / excerpt
+            if kw_low in name:
+                s += 300
+            if any(kw_low in it for it in items):
+                s += 200
+            if any(kw_low in ex for ex in excs):
+                s += 100
+
+            # How many query words appear in the best single menu item
+            best_item_wc = max(
+                (sum(1 for w in words_low if w in it) for it in items),
+                default=0,
+            )
+            s += best_item_wc * 40
+
+            # How many query words appear anywhere (name + menu + excerpts)
+            total_wc = sum(1 for w in words_low if w in combined)
+            s += total_wc * 15
+
+            # Tiebreak by aggregated score
+            s += (p.aggregated_score or 0)
+            return s
+
+        places.sort(key=_relevance, reverse=True)
+
+    return places[:limit]
 
 
 async def upsert_place_from_google(db: AsyncSession, data: dict) -> Place:

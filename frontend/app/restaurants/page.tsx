@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { searchPlaces, smartSearchPlaces, getSavedIds, type SmartSearchResult } from "@/lib/api";
 import CategoryRow from "@/components/CategoryRow";
@@ -37,22 +37,57 @@ function categoryToCuisine(catId: string): string | undefined {
 
 function RestaurantsPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // Read initial state from URL (set when user previously searched and navigated away)
   const initialQ = searchParams.get("q") ?? "";
+  const initialSmart = searchParams.get("smart") === "1";
+  const initialCat = searchParams.get("cat");
+  const initialSub = searchParams.get("sub");
+  const initialCity = searchParams.get("city") ?? "";
+  const initialOpen = searchParams.get("open") === "1";
 
   const [view, setView] = useState<ViewMode>("grid");
   const [q, setQ] = useState(initialQ);
   const [search, setSearch] = useState(initialQ);
   const [smartResult, setSmartResult] = useState<SmartSearchResult | null>(null);
   const [smartLoading, setSmartLoading] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedSub, setSelectedSub] = useState<string | null>(null);
-  const [cityFilter, setCityFilter] = useState<string>("");
-  const [openNow, setOpenNow] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(initialCat);
+  const [selectedSub, setSelectedSub] = useState<string | null>(initialSub);
+  const [cityFilter, setCityFilter] = useState<string>(initialCity);
+  const [openNow, setOpenNow] = useState(initialOpen);
   const [userLat, setUserLat] = useState<number | null>(null);
   const [userLng, setUserLng] = useState<number | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const isLoggedIn = typeof window !== "undefined" && !!localStorage.getItem("token");
+
+  // Re-run smart search on mount if it was active when user navigated away
+  const didRestoreSmartRef = useRef(false);
+  useEffect(() => {
+    if (!didRestoreSmartRef.current && initialSmart && initialQ) {
+      didRestoreSmartRef.current = true;
+      setSmartLoading(true);
+      smartSearchPlaces(initialQ, initialCity || undefined)
+        .then(setSmartResult)
+        .finally(() => setSmartLoading(false));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync meaningful state to URL so browser back-button restores it
+  const urlSyncSkipFirst = useRef(true);
+  useEffect(() => {
+    if (urlSyncSkipFirst.current) { urlSyncSkipFirst.current = false; return; }
+    const params = new URLSearchParams();
+    if (search) params.set("q", search);
+    if (smartResult) params.set("smart", "1");
+    if (selectedCategory) params.set("cat", selectedCategory);
+    if (selectedSub) params.set("sub", selectedSub);
+    if (cityFilter) params.set("city", cityFilter);
+    if (openNow) params.set("open", "1");
+    const qs = params.toString();
+    router.replace(qs ? `/restaurants?${qs}` : "/restaurants", { scroll: false });
+  }, [search, !!smartResult, selectedCategory, selectedSub, cityFilter, openNow]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load saved IDs for heart buttons
   useEffect(() => {
@@ -288,6 +323,25 @@ function RestaurantsPage() {
               📍 {parsed.city}
             </span>
           )}
+          {parsed.party_size != null && (
+            <span className="text-xs bg-purple-50 text-purple-700 px-3 py-1 rounded-full font-medium">
+              👥 {parsed.party_size} סועדים
+            </span>
+          )}
+          {parsed.open_at_hour != null && (() => {
+            const DAY_NAMES = ["ראשון","שני","שלישי","רביעי","חמישי","שישי","שבת"];
+            const todayGoogle = (new Date().getDay());
+            const dayLabel = parsed.open_at_day === todayGoogle
+              ? "היום"
+              : parsed.open_at_day === (todayGoogle + 1) % 7
+              ? "מחר"
+              : parsed.open_at_day != null ? DAY_NAMES[parsed.open_at_day] : "היום";
+            return (
+              <span className="text-xs bg-amber-50 text-amber-700 px-3 py-1 rounded-full font-medium">
+                🕐 {dayLabel} ב-{String(parsed.open_at_hour).padStart(2,"0")}:00
+              </span>
+            );
+          })()}
           <button
             onClick={clearSmartSearch}
             className="text-xs text-gray-400 hover:text-gray-600 px-2"

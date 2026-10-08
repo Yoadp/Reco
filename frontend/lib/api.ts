@@ -14,6 +14,19 @@ api.interceptors.request.use((config) => {
 
 export default api;
 
+// ---- Photo URL helper ----
+// Photos are stored as Google Places photo reference names (permanent, never expire).
+// e.g. "places/ChIJ.../photos/AXCi2y..."
+// The frontend constructs the actual URL using the public Maps API key.
+export function photoUrl(ref: string | null | undefined, width = 800): string | null {
+  if (!ref) return null;
+  // Already a resolved URL (legacy rows before the reference migration)
+  if (ref.startsWith("http")) return ref;
+  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  if (!key) return null;
+  return `https://places.googleapis.com/v1/${ref}/media?maxWidthPx=${width}&key=${key}`;
+}
+
 // ---- Types ----
 
 export interface DataSource {
@@ -168,6 +181,9 @@ export interface ParsedQuery {
   price_min_ils: number | null;
   price_max_ils: number | null;
   city: string | null;
+  party_size?: number | null;
+  open_at_day?: number | null;
+  open_at_hour?: number | null;
 }
 
 export interface SmartSearchResult {
@@ -197,3 +213,16 @@ export const unsavePlace = (place_id: string, list_type?: string) =>
 
 export const getSavedIds = () =>
   api.get<{ id: string; place_id: string; list_type: string }[]>("/saved").then((r) => r.data);
+
+// ---- Availability ----
+
+export interface AvailabilityResult {
+  slots: string[];
+  source: string;
+  venue_url: string | null;
+}
+
+export const getAvailability = (slug: string, partySize = 2, date?: string) =>
+  api.get<AvailabilityResult>(`/places/${slug}/availability`, {
+    params: { party_size: partySize, ...(date ? { date } : {}) },
+  }).then((r) => r.data);
