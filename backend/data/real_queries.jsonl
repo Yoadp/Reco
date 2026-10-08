@@ -1,0 +1,16 @@
+{"input": "בירה קורונה", "output": "{\"city\": null, \"cuisine\": null, \"dish\": \"בירה קורונה\", \"price_min_ils\": null, \"price_max_ils\": null}"}
+{"input": "פאד תאי וסלט פאפאיה", "output": "{\"city\": null, \"cuisine\": \"אסייתי\", \"dish\": \"פאד תאי וסלט פאפאיה\", \"price_min_ils\": null, \"price_max_ils\": null}"}
+{"input": "סושי בתל אביב", "output": "{\"city\": \"תל אביב\", \"cuisine\": \"יפני\", \"dish\": \"סושי\", \"price_min_ils\": null, \"price_max_ils\": null}"}
+{"input": "פסטה ברמת גן", "output": "{\"city\": \"רמת גן\", \"cuisine\": \"איטלקי\", \"dish\": \"פסטה\", \"price_min_ils\": null, \"price_max_ils\": null}"}
+{"input": "חומוס בחיפה", "output": "{\"city\": \"חיפה\", \"cuisine\": \"מזרח תיכוני\", \"dish\": \"חומוס\", \"price_min_ils\": null, \"price_max_ils\": null}"}
+{"input": "סושי זול", "output": "{\"city\": null, \"cuisine\": \"יפני\", \"dish\": \"סושי\", \"price_min_ils\": null, \"price_max_ils\": 50}"}
+{"input": "בשר יקר", "output": "{\"city\": null, \"cuisine\": \"בשר\", \"dish\": null, \"price_min_ils\": null, \"price_max_ils\": null}"}
+{"input": "פיצה עד 50 שקל", "output": "{\"city\": null, \"cuisine\": \"איטלקי\", \"dish\": \"פיצה\", \"price_min_ils\": null, \"price_max_ils\": 50}"}
+{"input": "סושי וראמן", "output": "{\"city\": null, \"cuisine\": \"יפני\", \"dish\": \"סושי וראמן\", \"price_min_ils\": null, \"price_max_ils\": null}"}
+{"input": "פסטה ולזניה", "output": "{\"city\": null, \"cuisine\": \"איטלקי\", \"dish\": \"פסטה ולזניה\", \"price_min_ils\": null, \"price_max_ils\": null}"}
+{"input": "מסעדה", "output": "{\"city\": null, \"cuisine\": null, \"dish\": null, \"price_min_ils\": null, \"price_max_ils\": null}"}
+{"input": "אוכל טוב בתל אביב", "output": "{\"city\": \"תל אביב\", \"cuisine\": null, \"dish\": null, \"price_min_ils\": null, \"price_max_ils\": null}"}
+{"input": "פאד תאי", "output": "{\"city\": null, \"cuisine\": \"תאילנדי\", \"dish\": \"פאד תאי\", \"price_min_ils\": null, \"price_max_ils\": null}"}
+{"input": "פסטה לימון ב60 שקל", "output": "{\"city\": null, \"cuisine\": \"איטלקי\", \"dish\": \"פסטה לימון\", \"price_min_ils\": 60, \"price_max_ils\": 60}"}
+{"input": "פסטה לימון", "output": "{\"city\": null, \"cuisine\": \"איטלקי\", \"dish\": \"פסטה לימון\", \"price_min_ils\": null, \"price_max_ils\": null}"}
+{"input": "פסטה לימון בתל אביב", "output": "{\"city\": \"תל אביב\", \"cuisine\": \"איטלקי\", \"dish\": \"פסטה לימון\", \"price_min_ils\": null, \"price_max_ils\": null}"}

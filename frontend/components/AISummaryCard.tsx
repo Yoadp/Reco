@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import api from "@/lib/api";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import api, { getMe } from "@/lib/api";
 
 interface AISummary {
   summary: string;
@@ -62,6 +63,29 @@ export default function AISummaryCard({ placeSlug }: Props) {
   const [result, setResult] = useState<AISummary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isLoggedIn = typeof window !== "undefined" && !!localStorage.getItem("token");
+  const { data: userProfile } = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    enabled: isLoggedIn && expanded,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Auto-populate freeText from profile preferences when expanded
+  useEffect(() => {
+    if (!expanded || !userProfile) return;
+    const parts: string[] = [];
+    if (userProfile.cuisine_preferences?.length) parts.push(...userProfile.cuisine_preferences);
+    if (userProfile.dietary_restrictions?.length) parts.push(...userProfile.dietary_restrictions);
+    if (userProfile.price_preference) {
+      const priceMap: Record<number, string> = { 1: "מחיר נמוך", 2: "מחיר בינוני", 3: "מחיר גבוה" };
+      if (priceMap[userProfile.price_preference]) parts.push(priceMap[userProfile.price_preference]);
+    }
+    if (parts.length > 0 && !freeText) {
+      setFreeText(parts.join(", "));
+    }
+  }, [expanded, userProfile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggleChip(id: string) {
     setSelected((prev) => {

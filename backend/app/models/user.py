@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
-from sqlalchemy import String, Integer, DateTime
+from sqlalchemy import String, Integer, DateTime, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -20,6 +20,9 @@ class User(Base):
     is_moderator: Mapped[bool] = mapped_column(default=False)
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    cuisine_preferences: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String), nullable=True)
+    dietary_restrictions: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String), nullable=True)
+    price_preference: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     recommendations: Mapped[List["Recommendation"]] = relationship("Recommendation", back_populates="user")
     votes: Mapped[List["Vote"]] = relationship("Vote", back_populates="user")

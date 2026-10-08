@@ -41,6 +41,7 @@ class PlaceOut(BaseModel):
     phone: str | None
     website: str | None
     hours: dict | None
+    matched_dishes: List[str] | None = None
 
     class Config:
         from_attributes = True
@@ -88,9 +89,26 @@ async def list_places(
     limit: int = Query(100, le=500),
     offset: int = Query(0),
     nlp: bool = Query(False),
+    open_now: bool = Query(False),
+    lat: Optional[float] = Query(None),
+    lng: Optional[float] = Query(None),
+    radius_km: Optional[float] = Query(None),
+    sort: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    return await search_places(db, q=q, city=city, cuisine=cuisine, price_range=price_range, limit=limit, offset=offset, nlp=nlp)
+    places, matched = await search_places(
+        db, q=q, city=city, cuisine=cuisine, price_range=price_range,
+        limit=limit, offset=offset, nlp=nlp,
+        open_now=open_now, lat=lat, lng=lng, radius_km=radius_km, sort=sort,
+    )
+    out = []
+    for p in places:
+        item = PlaceOut.model_validate(p)
+        dishes = matched.get(str(p.id))
+        if dishes:
+            item.matched_dishes = dishes
+        out.append(item)
+    return out
 
 
 class MenuItemOut(BaseModel):

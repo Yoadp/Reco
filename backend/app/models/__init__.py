@@ -4,5 +4,6 @@ from app.models.recommendation import Recommendation, Vote, PointsTransaction
 from app.models.rating import PlaceRating
 from app.models.visit import UserVisit
 from app.models.menu_item import MenuItem
+from app.models.saved_place import SavedPlace
 
-__all__ = ["Place", "DataSource", "User", "Recommendation", "Vote", "PointsTransaction", "PlaceRating", "UserVisit", "MenuItem"]
+__all__ = ["Place", "DataSource", "User", "Recommendation", "Vote", "PointsTransaction", "PlaceRating", "UserVisit", "MenuItem", "SavedPlace"]

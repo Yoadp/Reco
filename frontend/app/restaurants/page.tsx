@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { searchPlaces, smartSearchPlaces, type SmartSearchResult } from "@/lib/api";
+import { searchPlaces, smartSearchPlaces, getSavedIds, type SmartSearchResult } from "@/lib/api";
 import CategoryRow from "@/components/CategoryRow";
 import SubcategoryChips from "@/components/SubcategoryChips";
 import PlaceGrid from "@/components/PlaceGrid";
@@ -21,8 +21,6 @@ const MapView = dynamic(() => import("@/components/MapView"), {
 });
 
 type ViewMode = "grid" | "map";
-
-const PRICE_LABELS = ["", "₪", "₪₪", "₪₪₪", "₪₪₪₪"];
 
 function subcategoryToCuisine(subId: string): string | undefined {
   for (const cat of CATEGORIES) {
@@ -43,18 +41,31 @@ function RestaurantsPage() {
 
   const [view, setView] = useState<ViewMode>("grid");
   const [q, setQ] = useState(initialQ);
-  const [search, setSearch] = useState(initialQ);  // debounced value for fast SQL
+  const [search, setSearch] = useState(initialQ);
   const [smartResult, setSmartResult] = useState<SmartSearchResult | null>(null);
   const [smartLoading, setSmartLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedSub, setSelectedSub] = useState<string | null>(null);
   const [cityFilter, setCityFilter] = useState<string>("");
+  const [openNow, setOpenNow] = useState(false);
+  const [userLat, setUserLat] = useState<number | null>(null);
+  const [userLng, setUserLng] = useState<number | null>(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const isLoggedIn = typeof window !== "undefined" && !!localStorage.getItem("token");
 
-  // Debounce: fire fast SQL search 400ms after user stops typing (no NLP)
+  // Load saved IDs for heart buttons
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    getSavedIds()
+      .then((rows) => setSavedIds(new Set(rows.map((r) => r.place_id))))
+      .catch(() => {});
+  }, [isLoggedIn]);
+
+  // Debounce: fire fast SQL search 400ms after user stops typing
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(q);
-      // Clear smart results when user starts typing a new query
       if (smartResult && q !== smartResult.parsed.dish && q !== smartResult.parsed.cuisine) {
         setSmartResult(null);
       }
@@ -68,16 +79,19 @@ function RestaurantsPage() {
     ? categoryToCuisine(selectedCategory)
     : undefined;
 
-  // Fast SQL query — used for debounced typing and category filters
   const { data: fastPlaces = [], isLoading: fastLoading } = useQuery({
-    queryKey: ["places", search, cuisineFilter, cityFilter],
+    queryKey: ["places", search, cuisineFilter, cityFilter, openNow, userLat, userLng],
     queryFn: () =>
       searchPlaces({
         q: search || undefined,
         cuisine: cuisineFilter,
         city: cityFilter || undefined,
+        open_now: openNow || undefined,
+        lat: userLat ?? undefined,
+        lng: userLng ?? undefined,
+        radius_km: userLat != null ? 10 : undefined,
       }),
-    enabled: !smartResult,  // disable when we have smart results
+    enabled: !smartResult,
   });
 
   async function handleSearch(e: React.FormEvent) {
@@ -95,7 +109,7 @@ function RestaurantsPage() {
   function handleCategorySelect(id: string | null) {
     setSelectedCategory(id);
     setSelectedSub(null);
-    setSmartResult(null);  // category click returns to regular results
+    setSmartResult(null);
   }
 
   function clearSmartSearch() {
@@ -103,6 +117,34 @@ function RestaurantsPage() {
     setQ("");
     setSearch("");
   }
+
+  function handleNearMe() {
+    if (userLat != null) {
+      // Toggle off
+      setUserLat(null);
+      setUserLng(null);
+      return;
+    }
+    if (!navigator.geolocation) return;
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLat(pos.coords.latitude);
+        setUserLng(pos.coords.longitude);
+        setGpsLoading(false);
+      },
+      () => setGpsLoading(false),
+      { timeout: 10000 }
+    );
+  }
+
+  const handleSaveToggle = useCallback((placeId: string, _listType: string, saved: boolean) => {
+    setSavedIds((prev) => {
+      const next = new Set(prev);
+      saved ? next.add(placeId) : next.delete(placeId);
+      return next;
+    });
+  }, []);
 
   const isLoading = smartResult ? smartLoading : fastLoading;
   const allPlaces = smartResult
@@ -159,7 +201,7 @@ function RestaurantsPage() {
       )}
 
       {/* Search bar */}
-      <form onSubmit={handleSearch} className="flex gap-2 mb-4">
+      <form onSubmit={handleSearch} className="flex gap-2 mb-3">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -174,6 +216,33 @@ function RestaurantsPage() {
           {smartLoading ? "מחפש..." : "חיפוש"}
         </button>
       </form>
+
+      {/* Filter action row: Open Now + Near Me */}
+      <div className="flex gap-2 mb-3">
+        <button
+          onClick={() => setOpenNow((v) => !v)}
+          className={`flex items-center gap-1.5 text-sm font-medium px-3.5 py-1.5 rounded-full border transition-all ${
+            openNow
+              ? "bg-green-600 text-white border-green-600 shadow-sm"
+              : "bg-white text-gray-600 border-gray-300 hover:border-green-500 hover:text-green-700"
+          }`}
+        >
+          <span className={`w-2 h-2 rounded-full ${openNow ? "bg-white" : "bg-green-400"}`} />
+          פתוח עכשיו
+        </button>
+
+        <button
+          onClick={handleNearMe}
+          disabled={gpsLoading}
+          className={`flex items-center gap-1.5 text-sm font-medium px-3.5 py-1.5 rounded-full border transition-all disabled:opacity-50 ${
+            userLat != null
+              ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+              : "bg-white text-gray-600 border-gray-300 hover:border-indigo-400 hover:text-indigo-700"
+          }`}
+        >
+          {gpsLoading ? "מאתר..." : userLat != null ? "📍 קרוב אליי ×" : "📍 קרוב אליי"}
+        </button>
+      </div>
 
       {/* City filter chips */}
       <div className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-4 px-4" style={{ scrollbarWidth: "none" }}>
@@ -229,7 +298,7 @@ function RestaurantsPage() {
       )}
 
       {/* Active filter chips — shown when no smart result */}
-      {!smartResult && (cuisineFilter || search || cityFilter) && (
+      {!smartResult && (cuisineFilter || search || cityFilter || openNow || userLat != null) && (
         <div className="mb-4 flex items-center gap-2 flex-wrap">
           {cityFilter && (
             <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-medium">
@@ -269,7 +338,15 @@ function RestaurantsPage() {
                 <h2 className="text-sm font-bold text-gray-800">תוצאות מדויקות</h2>
                 <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{smartResult.exact.length}</span>
               </div>
-              <PlaceGrid places={smartResult.exact} isLoading={false} />
+              <PlaceGrid
+                places={smartResult.exact}
+                isLoading={false}
+                savedIds={savedIds}
+                isLoggedIn={isLoggedIn}
+                userLat={userLat}
+                userLng={userLng}
+                onSaveToggle={handleSaveToggle}
+              />
             </section>
           ) : (
             <p className="text-sm text-gray-500 mb-4 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
@@ -286,7 +363,15 @@ function RestaurantsPage() {
                   <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{smartResult.similar.length}</span>
                 </div>
               )}
-              <PlaceGrid places={smartResult.similar} isLoading={false} />
+              <PlaceGrid
+                places={smartResult.similar}
+                isLoading={false}
+                savedIds={savedIds}
+                isLoggedIn={isLoggedIn}
+                userLat={userLat}
+                userLng={userLng}
+                onSaveToggle={handleSaveToggle}
+              />
             </section>
           )}
 
@@ -299,12 +384,20 @@ function RestaurantsPage() {
         </>
       )}
 
-      {/* Map view — uses all results regardless of smart/fast */}
+      {/* Map view */}
       {view === "map" && <MapView places={allPlaces} />}
 
       {/* Regular (non-smart) grid results */}
       {!smartResult && view === "grid" && (
-        <PlaceGrid places={fastPlaces} isLoading={fastLoading} />
+        <PlaceGrid
+          places={fastPlaces}
+          isLoading={fastLoading}
+          savedIds={savedIds}
+          isLoggedIn={isLoggedIn}
+          userLat={userLat}
+          userLng={userLng}
+          onSaveToggle={handleSaveToggle}
+        />
       )}
 
       {/* Loading spinner for smart search */}

@@ -15,6 +15,7 @@ import BookingConfirmModal from "@/components/BookingConfirmModal";
 const PRICE = ["", "₪", "₪₪", "₪₪₪", "₪₪₪₪"];
 
 const BOOKING_SOURCES = new Set(["menu", "tabit", "ontopo", "wolt"]);
+const MENU_LINK_TYPES = new Set(["menu_link"]);
 
 function scoreColor(n: number) {
   if (n <= 4) return "bg-red-100 text-red-700 border-red-200 hover:bg-red-200";
@@ -45,6 +46,7 @@ const SOURCE_STYLES: Record<string, { bg: string; border: string; text: string; 
   yelp:          { bg: "bg-red-50",    border: "border-red-200",   text: "text-red-700",    icon: "🔴" },
   article:       { bg: "bg-blue-50",   border: "border-blue-200",  text: "text-blue-700",   icon: "📰" },
   menu:          { bg: "bg-teal-50",   border: "border-teal-200",  text: "text-teal-700",   icon: "🍽️" },
+  menu_link:     { bg: "bg-teal-50",   border: "border-teal-200",  text: "text-teal-700",   icon: "📋" },
   tabit:         { bg: "bg-purple-50", border: "border-purple-200",text: "text-purple-700", icon: "📋" },
   ontopo:        { bg: "bg-orange-50", border: "border-orange-200",text: "text-orange-700", icon: "🔖" },
   wolt:          { bg: "bg-yellow-50", border: "border-yellow-200",text: "text-yellow-700", icon: "🟡" },
@@ -207,7 +209,7 @@ function VisitSection({ placeId, placeName, visits }: { placeId: string; placeNa
 
 const CATEGORY_ORDER = ["ראשונות", "סלטים", "מרקים", "פיצות", "פסטות", "סושי", "עיקריות", "צדדיות", "קינוחים", "שתייה"];
 
-function MenuSection({ slug }: { slug: string }) {
+function MenuSection({ slug, menuUrl }: { slug: string; menuUrl?: string | null }) {
   const [open, setOpen] = useState(true);
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["menu", slug],
@@ -238,9 +240,20 @@ function MenuSection({ slug }: { slug: string }) {
             <span className="text-xs font-normal text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{items.length} מנות</span>
           )}
         </h2>
-        <span className="text-xs text-gray-400 group-hover:text-indigo-600 transition-colors bg-gray-100 group-hover:bg-indigo-50 px-2.5 py-1 rounded-full">
-          {open ? "▲ סגור" : "▼ הצג"}
-        </span>
+        <div className="flex items-center gap-2">
+          {menuUrl && (
+            <a
+              href={menuUrl} target="_blank" rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="text-xs font-medium text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100 px-2.5 py-1 rounded-full transition-colors"
+            >
+              תפריט מלא ↗
+            </a>
+          )}
+          <span className="text-xs text-gray-400 group-hover:text-indigo-600 transition-colors bg-gray-100 group-hover:bg-indigo-50 px-2.5 py-1 rounded-full">
+            {open ? "▲ סגור" : "▼ הצג"}
+          </span>
+        </div>
       </button>
 
       {open && (
@@ -338,6 +351,7 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
   if (!place) return <div className="p-8 text-center text-gray-400">המקום לא נמצא.</div>;
 
   const bookingSources = place.sources?.filter(s => BOOKING_SOURCES.has(s.source_type) && s.url) ?? [];
+  const menuLinkSource = place.sources?.find(s => MENU_LINK_TYPES.has(s.source_type) && s.url) ?? null;
   const pendingVisitForBanner = visits.find(v => !v.rated && isPastOrToday(v.visit_date));
 
   return (
@@ -400,6 +414,14 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
               </a>
             </>
           )}
+          {menuLinkSource?.url && (
+            <a
+              href={menuLinkSource.url} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl bg-teal-600 text-white hover:bg-teal-700 transition-colors"
+            >
+              📋 תפריט
+            </a>
+          )}
           {place.website && (
             <a
               href={place.website} target="_blank" rel="noopener noreferrer"
@@ -449,7 +471,7 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
       </div>
 
       {/* Menu */}
-      <MenuSection slug={slug} />
+      <MenuSection slug={slug} menuUrl={menuLinkSource?.url} />
 
       {/* Source Cards */}
       {place.sources && place.sources.length > 0 && (

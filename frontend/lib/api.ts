@@ -40,8 +40,9 @@ export interface Place {
   photos: string[] | null;
   phone: string | null;
   website: string | null;
-  hours: Record<string, string> | null;
+  hours: Record<string, unknown> | null;
   sources?: DataSource[];
+  matched_dishes?: string[] | null;
 }
 
 export interface Recommendation {
@@ -61,6 +62,9 @@ export interface UserProfile {
   username: string;
   points_balance: number;
   tier: "bronze" | "silver" | "gold";
+  cuisine_preferences: string[] | null;
+  dietary_restrictions: string[] | null;
+  price_preference: number | null;
 }
 
 // ---- API helpers ----
@@ -72,6 +76,11 @@ export const searchPlaces = (params: {
   price_range?: number;
   nlp?: boolean;
   limit?: number;
+  open_now?: boolean;
+  lat?: number;
+  lng?: number;
+  radius_km?: number;
+  sort?: string;
 }) => api.get<Place[]>("/places", { params: { limit: 200, ...params } }).then((r) => r.data);
 
 export const getPlace = (slug: string) =>
@@ -90,6 +99,12 @@ export const vote = (recId: string, value: 1 | -1) =>
   api.post(`/recommendations/${recId}/vote`, null, { params: { value } }).then((r) => r.data);
 
 export const getMe = () => api.get<UserProfile>("/users/me").then((r) => r.data);
+
+export const updatePreferences = (prefs: {
+  cuisine_preferences?: string[];
+  dietary_restrictions?: string[];
+  price_preference?: number;
+}) => api.patch<UserProfile>("/users/me/preferences", prefs).then((r) => r.data);
 
 export const login = (email: string, password: string) =>
   api.post<{ access_token: string }>("/auth/login", { email, password }).then((r) => r.data);
@@ -163,3 +178,22 @@ export interface SmartSearchResult {
 
 export const smartSearchPlaces = (q: string, city?: string) =>
   api.get<SmartSearchResult>("/places/smart", { params: { q, city: city || undefined } }).then((r) => r.data);
+
+// ---- Saved Places ----
+
+export interface SavedPlaceEntry extends Place {
+  saved_id: string;
+  list_type: string;
+}
+
+export const getSavedPlaces = (list_type?: string) =>
+  api.get<SavedPlaceEntry[]>("/saved/places", { params: list_type ? { list_type } : {} }).then((r) => r.data);
+
+export const savePlace = (place_id: string, list_type: string = "wishlist") =>
+  api.post("/saved", { place_id, list_type }).then((r) => r.data);
+
+export const unsavePlace = (place_id: string, list_type?: string) =>
+  api.delete(`/saved/${place_id}`, { params: list_type ? { list_type } : {} }).then((r) => r.data);
+
+export const getSavedIds = () =>
+  api.get<{ id: string; place_id: string; list_type: string }[]>("/saved").then((r) => r.data);
