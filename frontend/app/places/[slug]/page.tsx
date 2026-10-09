@@ -7,7 +7,8 @@ import { useRouter } from "next/navigation";
 import {
   getPlace, getRecommendations, createRecommendation, vote,
   getPlaceRating, ratePlace, getPlaceVisits, getPlaceMenu, getAvailability,
-  type Recommendation, type DataSource, type UserVisit, type MenuItem,
+  getSavedIds, savePlace, unsavePlace, searchPlaces,
+  type Recommendation, type DataSource, type UserVisit, type MenuItem, type Place,
 } from "@/lib/api";
 import PhotoGallery from "@/components/PhotoGallery";
 import AISummaryCard from "@/components/AISummaryCard";
@@ -122,20 +123,21 @@ function RecommendationCard({ rec, placeId }: { rec: Recommendation; placeId: st
 
 // ─── Visit Rating Section ──────────────────────────────────────────────────
 
-function VisitSection({ placeId, placeName, visits }: { placeId: string; placeName: string; visits: UserVisit[] }) {
+function VisitSection({ placeId, placeName, visits, rating }: {
+  placeId: string;
+  placeName: string;
+  visits: UserVisit[];
+  rating: { avg_score: number | null; count: number; user_score: number | null } | undefined;
+}) {
   const qc = useQueryClient();
   const loggedIn = isLoggedIn();
-
-  const { data: rating } = useQuery({
-    queryKey: ["rating", placeId],
-    queryFn: () => getPlaceRating(placeId),
-  });
 
   const rateMutation = useMutation({
     mutationFn: (score: number) => ratePlace(placeId, score),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["rating", placeId] });
       qc.invalidateQueries({ queryKey: ["visits", placeId] });
+      qc.invalidateQueries({ queryKey: ["place"] });
     },
   });
 
@@ -302,6 +304,56 @@ function MenuSection({ slug, menuUrl }: { slug: string; menuUrl?: string | null 
   );
 }
 
+// ─── Weekly Hours Accordion ───────────────────────────────────────────────
+
+const HEBREW_DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+
+function WeeklyHours({ hours }: { hours: Record<string, unknown> | null }) {
+  const [open, setOpen] = useState(false);
+  if (!hours || !Array.isArray((hours as { periods?: unknown[] }).periods)) return null;
+
+  type Period = { open: { day: number; hour: number; minute: number }; close?: { day: number; hour: number; minute: number } };
+  const periods = (hours as { periods: Period[] }).periods;
+
+  // Build a map: dayIndex → list of "HH:MM–HH:MM" strings
+  const byDay: Record<number, string[]> = {};
+  for (const p of periods) {
+    const d = p.open.day;
+    if (!byDay[d]) byDay[d] = [];
+    const openStr = `${String(p.open.hour).padStart(2, "0")}:${String(p.open.minute).padStart(2, "0")}`;
+    const closeStr = p.close
+      ? `${String(p.close.hour).padStart(2, "0")}:${String(p.close.minute).padStart(2, "0")}`
+      : "סגור";
+    byDay[d].push(`${openStr}–${closeStr}`);
+  }
+
+  const nowDay = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Jerusalem" })).getDay();
+
+  return (
+    <div className="mb-2">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-indigo-600 transition-colors"
+      >
+        🕐 שעות פתיחה <span className="text-xs text-gray-400">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="mt-2 border border-gray-100 rounded-xl overflow-hidden text-sm">
+          {HEBREW_DAYS.map((name, idx) => (
+            <div
+              key={idx}
+              className={`flex justify-between px-3 py-1.5 ${idx < 6 ? "border-b border-gray-50" : ""} ${idx === nowDay ? "bg-indigo-50 font-semibold text-indigo-700" : "text-gray-600"}`}
+            >
+              <span>{name}</span>
+              <span className="text-left">{byDay[idx]?.join(", ") ?? "סגור"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Availability Chip (hours-based, pure frontend) ───────────────────────
 
 function AvailabilityChip({ hours }: { hours: Record<string, unknown> | null }) {
@@ -437,6 +489,59 @@ function OntopoSlots({ slug, fallbackUrl }: { slug: string; fallbackUrl: string 
   );
 }
 
+// ─── Similar Restaurants ──────────────────────────────────────────────────
+
+function SimilarRestaurants({ place }: { place: Place }) {
+  const cuisine = place.cuisine?.[0];
+  const { data: results } = useQuery({
+    queryKey: ["similar", place.id, cuisine, place.city],
+    queryFn: () => searchPlaces({ cuisine, city: place.city ?? undefined, limit: 5 }),
+    enabled: !!cuisine,
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const similar = results?.filter(p => p.id !== place.id).slice(0, 4) ?? [];
+  if (similar.length === 0) return null;
+
+  const PRICE = ["", "₪", "₪₪", "₪₪₪", "₪₪₪₪"];
+
+  return (
+    <section className="mb-8">
+      <h2 className="font-bold text-base mb-3 text-gray-700">מסעדות דומות</h2>
+      <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4">
+        {similar.map(p => (
+          <a
+            key={p.id}
+            href={`/places/${p.slug}`}
+            className="shrink-0 w-40 rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition-shadow"
+          >
+            {p.photos?.[0] ? (
+              <img
+                src={p.photos[0]}
+                alt={p.name}
+                className="w-full h-24 object-cover"
+              />
+            ) : (
+              <div className="w-full h-24 bg-gray-100 flex items-center justify-center text-2xl">🍽️</div>
+            )}
+            <div className="p-2">
+              <p className="text-xs font-semibold text-gray-800 line-clamp-1">{p.name}</p>
+              <div className="flex items-center justify-between mt-0.5">
+                {p.aggregated_score && (
+                  <span className="text-xs text-indigo-600 font-bold">★ {p.aggregated_score.toFixed(1)}</span>
+                )}
+                {p.price_range && (
+                  <span className="text-xs text-gray-400">{PRICE[p.price_range]}</span>
+                )}
+              </div>
+            </div>
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────
 
 export default function PlacePage(props: { params: Promise<{ slug: string }> }) {
@@ -463,6 +568,27 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
     queryKey: ["visits", place?.id],
     queryFn: () => getPlaceVisits(place!.id),
     enabled: !!place && isLoggedIn(),
+  });
+
+  const { data: rating } = useQuery({
+    queryKey: ["rating", place?.id],
+    queryFn: () => getPlaceRating(place!.id),
+    enabled: !!place,
+  });
+
+  const { data: savedEntries = [] } = useQuery({
+    queryKey: ["savedIds"],
+    queryFn: getSavedIds,
+    enabled: isLoggedIn(),
+  });
+  const savedEntry = savedEntries.find(e => e.place_id === place?.id);
+  const isSaved = !!savedEntry;
+
+  const saveMutation = useMutation({
+    mutationFn: () => isSaved
+      ? unsavePlace(place!.id, savedEntry?.list_type)
+      : savePlace(place!.id, "wishlist"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["savedIds"] }),
   });
 
   // Start availability fetch as soon as place is loaded (Ontopo IDs go stale; discovery fixes them)
@@ -534,14 +660,36 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
       <div className="mb-6">
         <div className="flex items-start justify-between gap-4 mb-1">
           <h1 className="text-3xl font-extrabold text-gray-900">{place.name}</h1>
-          {place.aggregated_score && (
-            <span className="shrink-0 bg-indigo-600 text-white font-bold px-3 py-1.5 rounded-full text-lg">
-              ★ {place.aggregated_score.toFixed(1)}
-            </span>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {place.aggregated_score && (
+              <div className="text-right">
+                <span className="block bg-indigo-600 text-white font-bold px-3 py-1.5 rounded-full text-lg">
+                  ★ {place.aggregated_score.toFixed(1)}
+                </span>
+                {rating?.count ? (
+                  <span className="block text-xs text-gray-400 mt-0.5 text-center">{rating.count} דירוגים</span>
+                ) : null}
+              </div>
+            )}
+            {isLoggedIn() && (
+              <button
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending}
+                className={`p-2 rounded-full border transition-colors ${isSaved ? "bg-red-50 border-red-200 text-red-500 hover:bg-red-100" : "bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100"}`}
+                title={isSaved ? "הסר מהרשימה" : "שמור למועדפים"}
+              >
+                {isSaved ? "❤️" : "🤍"}
+              </button>
+            )}
+          </div>
         </div>
-        {place.address && <p className="text-gray-500 text-sm mb-2">📍 {place.address}</p>}
-        <div className="flex flex-wrap gap-2 mb-4">
+        {place.address && <p className="text-gray-500 text-sm mb-1">📍 {place.address}</p>}
+        {place.phone && (
+          <a href={`tel:${place.phone}`} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-indigo-600 mb-2">
+            📞 {place.phone}
+          </a>
+        )}
+        <div className="flex flex-wrap gap-2 mb-3">
           {place.cuisine?.map(c => (
             <span key={c} className="text-sm bg-indigo-50 text-indigo-700 font-medium px-3 py-0.5 rounded-full">{c}</span>
           ))}
@@ -551,6 +699,7 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
             </span>
           )}
         </div>
+        <WeeklyHours hours={place.hours} />
 
         {/* Action bar */}
         <div className="flex flex-wrap gap-2">
@@ -617,7 +766,7 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
 
       {/* Visit rating */}
       <div className="mb-6">
-        <VisitSection placeId={place.id} placeName={place.name} visits={visits} />
+        <VisitSection placeId={place.id} placeName={place.name} visits={visits} rating={rating} />
       </div>
 
       {/* Featured review — prefer google_places aggregate, then high review_count, then confidence */}
@@ -717,6 +866,9 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
           </div>
         )}
       </section>
+
+      {/* Similar restaurants */}
+      <SimilarRestaurants place={place} />
 
       {/* Booking confirm modal */}
       {bookingModal && (

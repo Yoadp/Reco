@@ -459,6 +459,14 @@ async def search_places(
         stmt = select(Place).order_by(Place.created_at.desc()).limit(limit)
         result = await db.execute(stmt)
         return list(result.scalars().all()), {}
+    if sort == "rating":
+        stmt = select(Place).where(Place.aggregated_score.isnot(None)).order_by(Place.aggregated_score.desc()).limit(limit)
+        if city:
+            stmt = stmt.where(or_(Place.city.ilike(f"%{city}%"), Place.address.ilike(f"%{city}%")))
+        if cuisine:
+            stmt = stmt.where(func.array_to_string(Place.cuisine, " ").ilike(f"%{cuisine}%"))
+        result = await db.execute(stmt)
+        return list(result.scalars().all()), {}
 
     # When post-processing is needed, fetch more rows
     needs_postprocess = open_now or open_at is not None or (lat is not None and lng is not None)

@@ -56,6 +56,7 @@ function RestaurantsPage() {
   const [selectedSub, setSelectedSub] = useState<string | null>(initialSub);
   const [cityFilter, setCityFilter] = useState<string>(initialCity);
   const [openNow, setOpenNow] = useState(initialOpen);
+  const [sortMode, setSortMode] = useState<string>(searchParams.get("sort") ?? "");
   const [userLat, setUserLat] = useState<number | null>(null);
   const [userLng, setUserLng] = useState<number | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
@@ -85,9 +86,10 @@ function RestaurantsPage() {
     if (selectedSub) params.set("sub", selectedSub);
     if (cityFilter) params.set("city", cityFilter);
     if (openNow) params.set("open", "1");
+    if (sortMode) params.set("sort", sortMode);
     const qs = params.toString();
     router.replace(qs ? `/restaurants?${qs}` : "/restaurants", { scroll: false });
-  }, [search, !!smartResult, selectedCategory, selectedSub, cityFilter, openNow]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, !!smartResult, selectedCategory, selectedSub, cityFilter, openNow, sortMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load saved IDs for heart buttons
   useEffect(() => {
@@ -115,7 +117,7 @@ function RestaurantsPage() {
     : undefined;
 
   const { data: fastPlaces = [], isLoading: fastLoading } = useQuery({
-    queryKey: ["places", search, cuisineFilter, cityFilter, openNow, userLat, userLng],
+    queryKey: ["places", search, cuisineFilter, cityFilter, openNow, userLat, userLng, sortMode],
     queryFn: () =>
       searchPlaces({
         q: search || undefined,
@@ -125,6 +127,7 @@ function RestaurantsPage() {
         lat: userLat ?? undefined,
         lng: userLng ?? undefined,
         radius_km: userLat != null ? 10 : undefined,
+        sort: sortMode || undefined,
       }),
     enabled: !smartResult,
   });
@@ -252,8 +255,8 @@ function RestaurantsPage() {
         </button>
       </form>
 
-      {/* Filter action row: Open Now + Near Me */}
-      <div className="flex gap-2 mb-3">
+      {/* Filter action row: Open Now + Near Me + Sort */}
+      <div className="flex gap-2 mb-3 flex-wrap">
         <button
           onClick={() => setOpenNow((v) => !v)}
           className={`flex items-center gap-1.5 text-sm font-medium px-3.5 py-1.5 rounded-full border transition-all ${
@@ -277,6 +280,21 @@ function RestaurantsPage() {
         >
           {gpsLoading ? "מאתר..." : userLat != null ? "📍 קרוב אליי ×" : "📍 קרוב אליי"}
         </button>
+
+        {/* Sort selector */}
+        <select
+          value={sortMode}
+          onChange={e => { setSortMode(e.target.value); setSmartResult(null); }}
+          className={`text-sm font-medium px-3 py-1.5 rounded-full border transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-300 ${
+            sortMode ? "bg-amber-50 border-amber-300 text-amber-800" : "bg-white border-gray-300 text-gray-600"
+          }`}
+        >
+          <option value="">מיין: ברירת מחדל</option>
+          <option value="rating">★ הכי מדורגות</option>
+          <option value="trending">🔥 חם עכשיו</option>
+          <option value="hidden_gems">💎 פנינים נסתרות</option>
+          <option value="new">🆕 חדש ב-Reco</option>
+        </select>
       </div>
 
       {/* City filter chips */}
