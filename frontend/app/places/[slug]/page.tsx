@@ -495,12 +495,15 @@ function SimilarRestaurants({ place }: { place: Place }) {
   const cuisine = place.cuisine?.[0];
   const { data: results } = useQuery({
     queryKey: ["similar", place.id, cuisine, place.city],
-    queryFn: () => searchPlaces({ cuisine, city: place.city ?? undefined, limit: 5 }),
+    queryFn: () => searchPlaces({ cuisine, city: place.city ?? undefined, limit: 12 }),
     enabled: !!cuisine,
     staleTime: 10 * 60 * 1000,
   });
 
-  const similar = results?.filter(p => p.id !== place.id).slice(0, 4) ?? [];
+  const similar = results
+    ?.filter(p => p.id !== place.id)
+    ?.filter(p => p.cuisine?.some(c => place.cuisine?.includes(c)))
+    ?.slice(0, 4) ?? [];
   if (similar.length === 0) return null;
 
   const PRICE = ["", "₪", "₪₪", "₪₪₪", "₪₪₪₪"];
