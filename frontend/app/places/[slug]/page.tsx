@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import {
   getPlace, getRecommendations, createRecommendation, vote,
   getPlaceRating, ratePlace, getPlaceVisits, getPlaceMenu, getAvailability,
-  getSavedIds, savePlace, unsavePlace, searchPlaces,
+  getSavedIds, savePlace, unsavePlace, searchPlaces, photoUrl,
   type Recommendation, type DataSource, type UserVisit, type MenuItem, type Place,
 } from "@/lib/api";
 import PhotoGallery from "@/components/PhotoGallery";
@@ -509,15 +509,17 @@ function SimilarRestaurants({ place }: { place: Place }) {
     <section className="mb-8">
       <h2 className="font-bold text-base mb-3 text-gray-700">מסעדות דומות</h2>
       <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4">
-        {similar.map(p => (
+        {similar.map(p => {
+          const thumb = photoUrl(p.photos?.[0], 400);
+          return (
           <a
             key={p.id}
             href={`/places/${p.slug}`}
             className="shrink-0 w-40 rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition-shadow"
           >
-            {p.photos?.[0] ? (
+            {thumb ? (
               <img
-                src={p.photos[0]}
+                src={thumb}
                 alt={p.name}
                 className="w-full h-24 object-cover"
               />
@@ -536,7 +538,8 @@ function SimilarRestaurants({ place }: { place: Place }) {
               </div>
             </div>
           </a>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

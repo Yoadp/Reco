@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 10080  # 7 days
 
     google_places_api_key: str = ""
+    google_search_cx: str = ""   # Google Custom Search Engine ID (optional, for bulk_article_finder)
     yelp_api_key: str = ""
     gemini_api_key: str = ""
 
