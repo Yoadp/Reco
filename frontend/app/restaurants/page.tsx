@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { searchPlaces, smartSearchPlaces, getSavedIds, type SmartSearchResult } from "@/lib/api";
+import { searchPlaces, smartSearchPlaces, getSavedIds, getMe, type SmartSearchResult } from "@/lib/api";
 import CategoryRow from "@/components/CategoryRow";
 import SubcategoryChips from "@/components/SubcategoryChips";
 import PlaceGrid from "@/components/PlaceGrid";
@@ -99,6 +99,15 @@ function RestaurantsPage() {
       .catch(() => {});
   }, [isLoggedIn]);
 
+  // Load user preferences (for result boosting)
+  const { data: profile } = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    enabled: isLoggedIn,
+    retry: false,
+    staleTime: 10 * 60 * 1000,
+  });
+
   // Debounce: fire fast SQL search 400ms after user stops typing
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -185,9 +194,20 @@ function RestaurantsPage() {
   }, []);
 
   const isLoading = smartResult ? smartLoading : fastLoading;
-  const allPlaces = smartResult
+  const rawPlaces = smartResult
     ? [...smartResult.exact, ...smartResult.similar]
     : fastPlaces;
+
+  // Boost places matching user's cuisine preferences to the top (only when no explicit cuisine filter active)
+  const allPlaces = (() => {
+    const prefs = profile?.cuisine_preferences;
+    if (!prefs?.length || cuisineFilter) return rawPlaces;
+    const preferred = rawPlaces.filter(p => p.cuisine?.some(c => prefs.includes(c)));
+    const rest = rawPlaces.filter(p => !p.cuisine?.some(c => prefs.includes(c)));
+    return preferred.length > 0 && preferred.length < rawPlaces.length
+      ? [...preferred, ...rest]
+      : rawPlaces;
+  })();
 
   const parsed = smartResult?.parsed;
 

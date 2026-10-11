@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, useCallback } from "react";
 import { type Place, savePlace, unsavePlace, photoUrl } from "@/lib/api";
-import { getPlaceGradient, getPlaceEmoji } from "@/lib/categories";
+import { getPlaceGradient, getPlaceEmoji, getCuisineChipColor } from "@/lib/categories";
 
 const PRICE = ["", "₪", "₪₪", "₪₪₪", "₪₪₪₪"];
 
@@ -73,6 +73,7 @@ interface PlaceCardProps {
 function PlaceCard({ place, savedIds, isLoggedIn, userLat, userLng, onSaveToggle }: PlaceCardProps) {
   const gradient = getPlaceGradient(place.cuisine);
   const emoji = getPlaceEmoji(place.cuisine);
+  const chipColor = getCuisineChipColor(place.cuisine);
   const photo = photoUrl(place.photos?.[0]);
   const openStatus = isOpenNow(place.hours);
   const dist = userLat != null && userLng != null ? distanceKm(userLat, userLng, place.lat, place.lng) : null;
@@ -178,10 +179,12 @@ function PlaceCard({ place, savedIds, isLoggedIn, userLat, userLng, onSaveToggle
         <div className="flex items-center justify-between gap-1 mb-1">
           <div className="min-w-0 flex-1">
             {place.cuisine && place.cuisine.length > 0 && (
-              <span className="text-xs text-gray-500 truncate block">{place.cuisine[0]}</span>
+              <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full inline-block mb-1 ${chipColor}`}>
+                {place.cuisine[0]}
+              </span>
             )}
             {place.address && (
-              <span className="text-xs text-gray-400 truncate block leading-tight mt-0.5">
+              <span className="text-xs text-gray-400 truncate block leading-tight">
                 {place.address.split(",")[0]}
               </span>
             )}

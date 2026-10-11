@@ -32,6 +32,7 @@ sentencepiece = "^0.2.2"
 accelerate = "^1.15.0"
 tiktoken = "^0.14.0"
 protobuf = "^7.36.2"
+pdfminer-six = ">=20221105"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8"

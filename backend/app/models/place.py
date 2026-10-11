@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from sqlalchemy import String, Float, Integer, DateTime, JSON, ForeignKey, Text, ARRAY
+from sqlalchemy import String, Float, Integer, DateTime, JSON, ForeignKey, Text, ARRAY, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -51,5 +51,7 @@ class DataSource(Base):
     raw_json: Mapped[Optional[dict]] = mapped_column(JSON)
     confidence: Mapped[float] = mapped_column(Float, default=0.5)
     scraped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    ai_summary: Mapped[Optional[str]] = mapped_column(Text)
+    is_sponsored: Mapped[Optional[bool]] = mapped_column(Boolean)
 
     place: Mapped["Place"] = relationship("Place", back_populates="sources")

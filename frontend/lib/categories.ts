@@ -298,3 +298,54 @@ export function getPlaceEmoji(cuisine: string[] | null): string {
   }
   return "🍽️";
 }
+
+// Maps a cuisine tag to the category's solid active color class (bg + white text).
+const CUISINE_TO_CHIP: Record<string, string> = {
+  // Middle Eastern
+  "מזרח תיכוני": "bg-amber-500 text-white",
+  "חומוס": "bg-amber-500 text-white", "פלאפל": "bg-amber-500 text-white",
+  "שווארמה": "bg-amber-500 text-white", "לבנוני": "bg-amber-500 text-white",
+  "מרוקאי": "bg-amber-500 text-white",
+  // Israeli
+  "ישראלי": "bg-blue-600 text-white", "גורמה": "bg-blue-600 text-white",
+  "ביסטרו": "bg-blue-600 text-white", "ארוחת בוקר": "bg-blue-600 text-white",
+  "אוכל רחוב": "bg-blue-600 text-white",
+  // Meat
+  "בשר": "bg-red-600 text-white", "גריל": "bg-red-600 text-white",
+  "סטייק": "bg-red-600 text-white", "המבורגר": "bg-red-600 text-white",
+  "ארגנטינאי": "bg-red-600 text-white", "דרום אמריקאי": "bg-red-600 text-white",
+  // Japanese
+  "יפני": "bg-rose-600 text-white", "סושי": "bg-rose-600 text-white",
+  "ראמן": "bg-rose-600 text-white", "סשימי": "bg-rose-600 text-white",
+  // Asian
+  "אסייתי": "bg-violet-600 text-white", "סיני": "bg-violet-600 text-white",
+  "תאילנדי": "bg-violet-600 text-white", "פיוז'ן אסייתי": "bg-violet-600 text-white",
+  // Italian
+  "איטלקי": "bg-emerald-600 text-white", "פיצה": "bg-emerald-600 text-white",
+  "פסטה": "bg-emerald-600 text-white",
+  // European
+  "צרפתי": "bg-yellow-500 text-white", "יווני": "bg-yellow-500 text-white",
+  "אירופאי": "bg-yellow-500 text-white",
+  // Mediterranean / seafood
+  "ים תיכוני": "bg-sky-600 text-white", "פירות ים": "bg-sky-600 text-white",
+  "דגים": "bg-sky-600 text-white",
+  // Bar
+  "בר": "bg-orange-600 text-white", "פאב": "bg-orange-600 text-white",
+  "קוקטיילים": "bg-orange-600 text-white", "יין": "bg-orange-600 text-white",
+  // Cafe
+  "קפה": "bg-stone-600 text-white", "מאפים": "bg-stone-600 text-white",
+  "ברנץ'": "bg-stone-600 text-white",
+  // Mexican
+  "מקסיקני": "bg-orange-500 text-white", "טאקו": "bg-orange-500 text-white",
+  // Fast food
+  "מזון מהיר": "bg-amber-600 text-white",
+};
+
+export function getCuisineChipColor(cuisine: string[] | null): string {
+  if (!cuisine || cuisine.length === 0) return "bg-gray-100 text-gray-600";
+  for (const c of cuisine) {
+    const chip = CUISINE_TO_CHIP[c];
+    if (chip) return chip;
+  }
+  return "bg-indigo-100 text-indigo-700";
+}

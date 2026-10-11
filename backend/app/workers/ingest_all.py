@@ -12,8 +12,13 @@ import asyncio
 from app.workers.google_ingestion import ingest_city
 
 TIER1 = {"תל אביב", "הרצליה", "נתניה", "ראשון לציון"}
-TIER1_QUERIES = ["restaurant", "coffee", "bar", "sushi", "pizza", "hummus"]
-TIER2_QUERIES = ["restaurant"]
+TIER1_QUERIES = [
+    "restaurant", "coffee", "bar", "sushi", "pizza", "hummus",
+    "בשר", "דגים", "טבעוני", "פסטה", "המבורגר", "אסייתי",
+]
+TIER2_QUERIES = [
+    "restaurant", "bar", "coffee", "sushi", "המבורגר", "בשר",
+]
 
 ALL_CITIES = [
     ("תל אביב",     "תל אביב"),

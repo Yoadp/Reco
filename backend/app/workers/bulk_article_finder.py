@@ -226,6 +226,98 @@ async def _scrape(url: str, client: httpx.AsyncClient) -> str:
 
 # ─── Main worker ──────────────────────────────────────────────────────────────
 
+async def _process_place(
+    place,
+    semaphore: asyncio.Semaphore,
+    client: httpx.AsyncClient,
+    use_google: bool,
+    google_cx: str,
+    counter: list,
+    total: int,
+) -> int:
+    """Process one restaurant, guarded by semaphore. Returns number of articles added."""
+    async with semaphore:
+        try:
+            counter[0] += 1
+            i = counter[0]
+            name = place.name
+            city = place.city or ""
+            clean_name = re.split(r'[|–—]', name)[0].strip()
+            query = f'"{clean_name}" {city} ביקורת מסעדה'
+            print(f"[{i}/{total}] {name}")
+
+            try:
+                if use_google:
+                    found_urls = await _search_google_cse(query, google_cx, settings.google_places_api_key, client)
+                else:
+                    found_urls = await _search_duckduckgo(query, client)
+                    if not any("walla.co.il" in u for u, _ in found_urls):
+                        walla_query = f'{clean_name} {city} site:food.walla.co.il'
+                        walla_results = await _search_duckduckgo(walla_query, client)
+                        found_urls = walla_results + found_urls
+                        await asyncio.sleep(1.5)
+                    if not found_urls and not any('א' <= c <= 'ת' for c in clean_name):
+                        en_query = f'"{clean_name}" {city} restaurant review Israel'
+                        found_urls = await _search_duckduckgo(en_query, client)
+                        await asyncio.sleep(1.5)
+            except Exception as e:
+                print(f"  ✗ שגיאת חיפוש: {e}")
+                return 0
+
+            if not found_urls:
+                print(f"  לא נמצאו תוצאות")
+                await asyncio.sleep(2)
+                return 0
+
+            place_added = 0
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(select(Place).where(Place.id == place.id))
+                db_place = result.scalar_one_or_none()
+                if not db_place:
+                    return 0
+
+                existing_result = await db.execute(
+                    select(DataSource.url)
+                    .where(DataSource.place_id == place.id)
+                    .where(DataSource.source_type == "article")
+                )
+                existing_urls = set(existing_result.scalars().all())
+
+                for url, label in found_urls:
+                    try:
+                        if url in existing_urls:
+                            print(f"  ↩ כבר קיים: {url[:60]}")
+                            continue
+                        excerpt = await _scrape(url, client)
+                        if not excerpt:
+                            print(f"  ✗ לא נמצא תוכן: {url[:60]}")
+                            await asyncio.sleep(1)
+                            continue
+                        source = DataSource(
+                            place_id=db_place.id,
+                            source_type="article",
+                            source_name=label,
+                            url=url,
+                            excerpt=excerpt,
+                            confidence=0.65,
+                        )
+                        db.add(source)
+                        print(f"  ✓ {label}: {excerpt[:80]}...")
+                        place_added += 1
+                        await asyncio.sleep(1.5)
+                    except Exception as e:
+                        print(f"  ✗ שגיאה ב-{url[:50]}: {e}")
+
+                if place_added:
+                    await db.commit()
+
+            await asyncio.sleep(2.5)
+            return place_added
+        except Exception as e:
+            print(f"  ✗ שגיאה כללית עבור {place.name}: {e}")
+            return 0
+
+
 async def run(slug_filter: str | None = None, redo: bool = False, limit: int | None = None):
     google_cx = getattr(settings, "google_search_cx", "")
     use_google = bool(google_cx and settings.google_places_api_key)
@@ -240,7 +332,6 @@ async def run(slug_filter: str | None = None, redo: bool = False, limit: int | N
         places = list(result.scalars().all())
 
         if not redo:
-            # Skip places that already have at least one article source
             article_place_ids_result = await db.execute(
                 select(DataSource.place_id)
                 .where(DataSource.source_type == "article")
@@ -254,89 +345,22 @@ async def run(slug_filter: str | None = None, redo: bool = False, limit: int | N
         if limit:
             places = places[:limit]
 
-        print(f"Processing {len(places)} places\n")
+        print(f"Processing {len(places)} places (5 concurrent)\n")
 
-    total_added = 0
+    semaphore = asyncio.Semaphore(5)
+    counter = [0]  # mutable counter shared across coroutines
+    total = len(places)
+
     async with httpx.AsyncClient(
         headers={"User-Agent": USER_AGENT},
         follow_redirects=True,
     ) as client:
-        for i, place in enumerate(places, 1):
-            name = place.name
-            city = place.city or ""
-            # Strip English subtitle / sub-brand after | or – (confuses search engines)
-            clean_name = re.split(r'[|–—]', name)[0].strip()
-            query = f'"{clean_name}" {city} ביקורת מסעדה'
-            print(f"[{i}/{len(places)}] {name}")
+        results = await asyncio.gather(*[
+            _process_place(place, semaphore, client, use_google, google_cx, counter, total)
+            for place in places
+        ])
 
-            if use_google:
-                found_urls = await _search_google_cse(query, google_cx, settings.google_places_api_key, client)
-            else:
-                found_urls = await _search_duckduckgo(query, client)
-                # Targeted walla search (most reliable Israeli food review source)
-                if not any("walla.co.il" in u for u, _ in found_urls):
-                    walla_query = f'{clean_name} {city} site:food.walla.co.il'
-                    walla_results = await _search_duckduckgo(walla_query, client)
-                    found_urls = walla_results + found_urls
-                    await asyncio.sleep(1.5)
-                # Fallback for English-name restaurants: try English query too
-                if not found_urls and not any('א' <= c <= 'ת' for c in clean_name):
-                    en_query = f'"{clean_name}" {city} restaurant review Israel'
-                    found_urls = await _search_duckduckgo(en_query, client)
-                    await asyncio.sleep(1.5)
-
-            if not found_urls:
-                print(f"  לא נמצאו תוצאות")
-                await asyncio.sleep(2)
-                continue
-
-            place_added = 0
-            async with AsyncSessionLocal() as db:
-                # Re-fetch place to get its ID fresh in this session
-                result = await db.execute(select(Place).where(Place.id == place.id))
-                db_place = result.scalar_one_or_none()
-                if not db_place:
-                    continue
-
-                # Get existing article URLs for this place to avoid duplicates
-                existing_result = await db.execute(
-                    select(DataSource.url)
-                    .where(DataSource.place_id == place.id)
-                    .where(DataSource.source_type == "article")
-                )
-                existing_urls = set(existing_result.scalars().all())
-
-                for url, label in found_urls:
-                    if url in existing_urls:
-                        print(f"  ↩ כבר קיים: {url[:60]}")
-                        continue
-
-                    excerpt = await _scrape(url, client)
-                    if not excerpt:
-                        print(f"  ✗ לא נמצא תוכן: {url[:60]}")
-                        await asyncio.sleep(1)
-                        continue
-
-                    source = DataSource(
-                        place_id=db_place.id,
-                        source_type="article",
-                        source_name=label,
-                        url=url,
-                        excerpt=excerpt,
-                        confidence=0.65,
-                    )
-                    db.add(source)
-                    print(f"  ✓ {label}: {excerpt[:80]}...")
-                    place_added += 1
-                    await asyncio.sleep(1.5)
-
-                if place_added:
-                    await db.commit()
-                    total_added += place_added
-
-            # Polite delay between restaurants (DDG rate limit)
-            await asyncio.sleep(2.5)
-
+    total_added = sum(results)
     print(f"\nסיום. נוספו {total_added} מאמרים חדשים.")
 
 

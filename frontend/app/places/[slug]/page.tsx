@@ -57,37 +57,59 @@ const SOURCE_STYLES: Record<string, { bg: string; border: string; text: string; 
 function SourceCard({ source }: { source: DataSource }) {
   const style = SOURCE_STYLES[source.source_type] ?? SOURCE_STYLES.article;
   const pct = Math.round(source.confidence * 100);
+  const isArticle = source.source_type === "article";
+  const displayText = isArticle && source.ai_summary ? source.ai_summary : source.excerpt;
 
-  return (
-    <div className={`shrink-0 w-52 rounded-xl border ${style.border} ${style.bg} p-3.5 flex flex-col gap-2`}>
-      <span className={`text-sm font-bold ${style.text} flex items-center gap-1`}>
-        {style.icon} {source.source_name ?? source.source_type}
-      </span>
+  const inner = (
+    <div className={`shrink-0 w-52 rounded-xl border ${style.border} ${style.bg} p-3.5 flex flex-col gap-2 ${isArticle && source.url ? "hover:shadow-md transition-shadow cursor-pointer" : ""}`}>
+      <div className="flex items-center justify-between gap-1">
+        <span className={`text-sm font-bold ${style.text} flex items-center gap-1`}>
+          {style.icon} {source.source_name ?? source.source_type}
+        </span>
+        {isArticle && (
+          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 ${
+            source.is_sponsored === false ? "bg-green-100 text-green-700" :
+            source.is_sponsored === true  ? "bg-amber-100 text-amber-700" :
+            source.ai_summary             ? "bg-gray-100 text-gray-500" : ""
+          }`}>
+            {source.is_sponsored === false ? "✓ ביקורת עצמאית" :
+             source.is_sponsored === true  ? "★ ממומן" :
+             source.ai_summary             ? "? לא ידוע" : ""}
+          </span>
+        )}
+      </div>
 
-      {source.excerpt && (
-        <p className="text-xs text-gray-600 leading-relaxed line-clamp-3">&ldquo;{source.excerpt}&rdquo;</p>
+      {displayText && (
+        <p className="text-xs text-gray-600 leading-relaxed line-clamp-3">&ldquo;{displayText}&rdquo;</p>
       )}
 
       {source.review_count && (
-        <p className="text-xs text-gray-400">{source.review_count.toLocaleString()} ביקורות</p>
+        <p className={`text-xs font-semibold ${style.text}`}>★ {source.review_count.toLocaleString()} ביקורות</p>
       )}
 
-      {/* Simplified trust bar — no % label */}
-      <div className="w-full bg-gray-200 rounded-full h-1">
-        <div
-          className={`h-1 rounded-full ${pct >= 75 ? "bg-green-400" : pct >= 50 ? "bg-yellow-400" : "bg-orange-400"}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+      {source.source_type !== "google_places" && (
+        <div className="w-full bg-gray-200 rounded-full h-1">
+          <div
+            className={`h-1 rounded-full ${pct >= 75 ? "bg-green-400" : pct >= 50 ? "bg-yellow-400" : "bg-orange-400"}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
 
-      {source.url && (
-        <a href={source.url} target="_blank" rel="noopener noreferrer"
-           className={`text-xs ${style.text} hover:underline`}>
-          קישור למקור ↗
-        </a>
+      {isArticle && source.url && (
+        <span className={`text-xs ${style.text}`}>קרא את הביקורת ↗</span>
       )}
     </div>
   );
+
+  if (isArticle && source.url) {
+    return (
+      <a href={source.url} target="_blank" rel="noopener noreferrer" className="block">
+        {inner}
+      </a>
+    );
+  }
+  return inner;
 }
 
 // ─── Recommendation Card ───────────────────────────────────────────────────
@@ -293,9 +315,22 @@ function MenuSection({ slug, menuUrl }: { slug: string; menuUrl?: string | null 
                   ))}
                 </div>
               ))}
-              <p className="text-xs text-gray-400 text-center py-3 border-t border-gray-50">
-                * מחירים משוערים
-              </p>
+              {(() => {
+                const src = items[0]?.source;
+                if (src === "website") return (
+                  <div className="flex items-center justify-center py-3 border-t border-gray-50">
+                    <span className="text-xs text-green-600 bg-green-50 px-2.5 py-1 rounded-full font-medium">🌐 אתר המסעדה</span>
+                  </div>
+                );
+                if (src === "wolt") return (
+                  <div className="flex items-center justify-center py-3 border-t border-gray-50">
+                    <span className="text-xs text-sky-600 bg-sky-50 px-2.5 py-1 rounded-full font-medium">🔵 וולט</span>
+                  </div>
+                );
+                return (
+                  <p className="text-xs text-gray-400 text-center py-3 border-t border-gray-50">* מחירים משוערים</p>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -808,14 +843,24 @@ export default function PlacePage(props: { params: Promise<{ slug: string }> }) 
       <MenuSection slug={slug} menuUrl={menuLinkSource?.url} />
 
       {/* Source Cards */}
-      {place.sources && place.sources.length > 0 && (
-        <section className="mb-6">
-          <h2 className="font-bold text-base mb-3 text-gray-700">מה אומרים עליהם</h2>
-          <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4">
-            {place.sources.map((s, i) => <SourceCard key={i} source={s} />)}
-          </div>
-        </section>
-      )}
+      {(() => {
+        const REVIEW_TYPES = new Set(["google_places", "wolt", "ontopo", "article", "yelp"]);
+        const reviewSources = (place.sources ?? [])
+          .filter(s => REVIEW_TYPES.has(s.source_type) && (s.excerpt || s.review_count || s.url))
+          .sort((a, b) => {
+            const ORDER: Record<string, number> = { article: 0, google_places: 1, wolt: 2, ontopo: 3, yelp: 4 };
+            return (ORDER[a.source_type] ?? 9) - (ORDER[b.source_type] ?? 9);
+          });
+        if (reviewSources.length === 0) return null;
+        return (
+          <section className="mb-6">
+            <h2 className="font-bold text-base mb-3 text-gray-700">מה אומרים עליהם</h2>
+            <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4">
+              {reviewSources.map((s, i) => <SourceCard key={i} source={s} />)}
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Community tips */}
       <section className="mb-6">

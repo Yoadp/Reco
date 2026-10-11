@@ -871,7 +871,8 @@ async def upsert_place_from_google(db: AsyncSession, data: dict) -> Place:
     place.lat = data.get("lat", place.lat)
     place.lng = data.get("lng", place.lng)
     place.phone = data.get("formatted_phone_number", place.phone)
-    place.website = data.get("website", place.website)
+    website = data.get("website", place.website)
+    place.website = website[:499] if isinstance(website, str) and len(website) > 499 else website
     place.hours = data.get("opening_hours", place.hours)
     place.photos = data.get("photos", place.photos)
     place.aggregated_score = data.get("rating", place.aggregated_score)

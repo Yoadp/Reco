@@ -37,6 +37,8 @@ export interface DataSource {
   review_count: number | null;
   confidence: number;
   scraped_at: string;
+  ai_summary: string | null;
+  is_sponsored: boolean | null;
 }
 
 export interface Place {

@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { searchPlaces, photoUrl, type Place } from "@/lib/api";
+import { searchPlaces, getMe, photoUrl, type Place } from "@/lib/api";
 
 function PlacePhotoCard({ place }: { place: Place }) {
   const photo = photoUrl(place.photos?.[0]);
@@ -148,6 +148,93 @@ function HeroMosaic() {
   );
 }
 
+function ForYouSection() {
+  const [token, setToken] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    setToken(localStorage.getItem("token"));
+  }, []);
+
+  const { data: profile } = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    enabled: !!token,
+    retry: false,
+  });
+
+  const topCuisine = profile?.cuisine_preferences?.[0];
+
+  const { data: places = [], isLoading } = useQuery({
+    queryKey: ["forYou", topCuisine],
+    queryFn: () => searchPlaces({ cuisine: topCuisine!, limit: 8 }),
+    enabled: !!topCuisine,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Still mounting — render nothing to avoid flicker
+  if (token === undefined) return null;
+
+  // Logged-out: show register CTA
+  if (!token) {
+    return (
+      <section className="mb-12 rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 p-6 text-center">
+        <p className="text-2xl mb-2">🎯</p>
+        <h3 className="text-base font-bold text-gray-800 mb-1">הגדר את הטעם שלך</h3>
+        <p className="text-sm text-gray-500 mb-4">הצטרף כדי לקבל המלצות מותאמות אישית</p>
+        <Link href="/register" className="inline-block bg-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-500 transition-colors">
+          הרשמה חינם ←
+        </Link>
+      </section>
+    );
+  }
+
+  // Logged-in but no preferences set
+  if (profile && !topCuisine) {
+    return (
+      <section className="mb-12 rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 p-6 text-center">
+        <p className="text-2xl mb-2">✨</p>
+        <h3 className="text-base font-bold text-gray-800 mb-1">ספר לנו מה אתה אוהב</h3>
+        <p className="text-sm text-gray-500 mb-4">הגדר טעמים כדי לקבל המלצות אישיות</p>
+        <Link href="/profile" className="inline-block bg-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-500 transition-colors">
+          הגדר טעמים ←
+        </Link>
+      </section>
+    );
+  }
+
+  if (!topCuisine || (!isLoading && places.length === 0)) return null;
+
+  return (
+    <section className="mb-12">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-xl font-extrabold text-gray-900">בשבילך</h2>
+          <p className="text-sm text-gray-400 mt-0.5">על בסיס הטעמים שלך · {topCuisine}</p>
+        </div>
+        <Link
+          href={`/restaurants?cuisine=${encodeURIComponent(topCuisine)}`}
+          className="text-sm text-indigo-600 font-medium hover:underline shrink-0"
+        >
+          הכל ←
+        </Link>
+      </div>
+      {isLoading ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-2xl bg-gray-100 animate-pulse aspect-[3/4]" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {places.slice(0, 4).map((p) => (
+            <PlacePhotoCard key={p.id} place={p} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function HomePage() {
   const [q, setQ] = useState("");
   const router = useRouter();
@@ -198,6 +285,8 @@ export default function HomePage() {
 
       {/* Discovery sections */}
       <div className="max-w-3xl mx-auto px-4 py-10 w-full">
+        <ForYouSection />
+
         <DiscoverySection
           title="חם עכשיו"
           sort="trending"

@@ -26,6 +26,8 @@ class DataSourceOut(BaseModel):
     review_count: int | None
     confidence: float
     scraped_at: datetime
+    ai_summary: str | None = None
+    is_sponsored: bool | None = None
 
     class Config:
         from_attributes = True
