@@ -325,7 +325,7 @@ async def nlp_parse_query(q: str) -> dict:
 נתח את השאילתה הבאה וחלץ את השדות הבאים:
 - city: שם עיר בעברית אם מוזכר (כגון תל אביב, יפו, חיפה, רמת גן), אחרת null
 - cuisine: קטגוריית מטבח רחבה (כגון איטלקי, יפני, ים תיכוני, בשר, ישראלי), אחרת null
-- dish: שם מנה ספציפית (כגון פסטה ברוטב לימון, המבורגר כפול, ראמן חריף), אחרת null. אל תכניס ל-dish מילות זמן/יום/סועדים כמו "שולחן ל2 הלילה"
+- dish: שם מנה ספציפית. אם מוזכרות מספר מנות שונות, פרד אותן ב-" ו " (כגון "פסטה ו סושי", "ראמן ו דים סאם"). אחרת null. אל תכניס ל-dish מילות זמן/יום/סועדים כמו "שולחן ל2 הלילה"
 - price_min_ils: המחיר המינימלי בשקלים כמספר שלם אם מוזכר, אחרת null
 - price_max_ils: המחיר המקסימלי בשקלים כמספר שלם אם מוזכר, אחרת null
 - party_size: מספר סועדים אם מוזכר (כגון "שולחן ל2", "לשניים", "ל-4 אנשים"), אחרת null
@@ -339,6 +339,8 @@ async def nlp_parse_query(q: str) -> dict:
 - "פסטה ברוטב לימון במחיר 60-80" → {{"city":null,"cuisine":"איטלקי","dish":"פסטה ברוטב לימון","price_min_ils":60,"price_max_ils":80,"party_size":null,"open_at_day":null,"open_at_hour":null}}
 - "שולחן ל2 להיום בערב במסעדה איטלקית" → {{"city":null,"cuisine":"איטלקי","dish":null,"price_min_ils":null,"price_max_ils":null,"party_size":2,"open_at_day":{today_google},"open_at_hour":19}}
 - "סושי בשישי בצהריים" → {{"city":null,"cuisine":"יפני","dish":"סושי","price_min_ils":null,"price_max_ils":null,"party_size":null,"open_at_day":5,"open_at_hour":12}}
+- "פאד תאי וראמן חריף" → {{"city":null,"cuisine":"תאי","dish":"פאד תאי ו ראמן חריף","price_min_ils":null,"price_max_ils":null,"party_size":null,"open_at_day":null,"open_at_hour":null}}
+- "פיצה והמבורגר בתל אביב" → {{"city":"תל אביב","cuisine":null,"dish":"פיצה ו המבורגר","price_min_ils":null,"price_max_ils":null,"party_size":null,"open_at_day":null,"open_at_hour":null}}
 
 שאילתה: "{q}"
 """
@@ -651,6 +653,18 @@ async def smart_search_places(
         else None
     )
 
+    # Detect multiple dishes: Groq may return "פסטה ו סושי" or the whole compound.
+    # Also try splitting the raw query (minus city) as a fallback.
+    dish_list: list[str] = _split_dishes(dish) if dish else []
+    if len(dish_list) <= 1:
+        q_food = q.replace(resolved_city, "").strip() if resolved_city else q
+        q_food = re.sub(r'\s+', ' ', q_food).strip()
+        q_parts = _split_dishes(q_food)
+        if len(q_parts) > 1:
+            dish_list = q_parts
+    if not dish_list and dish:
+        dish_list = [dish]
+
     exact: List[Place] = []
     similar: List[Place] = []
     seen_ids: set[uuid.UUID] = set()
@@ -675,15 +689,28 @@ async def smart_search_places(
         # Location-first cascade: when a city is known, it is a hard constraint.
         # Food narrows results within the city; we never escape to other cities.
 
-        # --- Tier 1: city + dish + price (exact food match in location) ---
-        if dish:
-            tier1 = await _search_with_excerpt(db, dish, resolved_city, price_range, limit=20)
-            _add_to(exact, tier1)
+        if len(dish_list) > 1:
+            # Multi-dish: OR-union — find places that serve any of the listed dishes.
+            # Each dish gets its own search; results are merged and deduped.
+            # --- Tier 1: each dish + city + price ---
+            for d in dish_list:
+                t = await _search_with_excerpt(db, d, resolved_city, price_range, limit=15)
+                _add_to(exact, t)
+            # --- Tier 2: each dish + city (relax price) ---
+            for d in dish_list:
+                t = await _search_with_excerpt(db, d, resolved_city, price_range=None, limit=15)
+                _add_to(similar, t)
+        else:
+            d = dish_list[0] if dish_list else None
+            # --- Tier 1: city + dish + price (exact food match in location) ---
+            if d:
+                tier1 = await _search_with_excerpt(db, d, resolved_city, price_range, limit=20)
+                _add_to(exact, tier1)
 
-        # --- Tier 2: city + dish (relax price) ---
-        if dish:
-            tier2 = await _search_with_excerpt(db, dish, resolved_city, price_range=None, limit=20)
-            _add_to(exact if not exact else similar, tier2)
+            # --- Tier 2: city + dish (relax price) ---
+            if d:
+                tier2 = await _search_with_excerpt(db, d, resolved_city, price_range=None, limit=20)
+                _add_to(exact if not exact else similar, tier2)
 
         # --- Tier 3: city + cuisine (broader food category) ---
         if cuisine:
@@ -703,7 +730,8 @@ async def smart_search_places(
 
         # --- Tier 6: no city was specified — global food search as last resort ---
         if len(exact) + len(similar) < 3 and not resolved_city:
-            tier6, _ = await search_places(db, q=dish or cuisine, limit=20)
+            fallback_q = " ".join(dish_list) if dish_list else cuisine
+            tier6, _ = await search_places(db, q=fallback_q, limit=20)
             _add_to(similar, tier6)
 
     # Apply open_at filter across all results
@@ -712,11 +740,12 @@ async def smart_search_places(
         exact = [p for p in exact if p.hours and is_open_at(p.hours, oa_day, oa_hour)]
         similar = [p for p in similar if p.hours and is_open_at(p.hours, oa_day, oa_hour)]
 
+    display_dish = " ו ".join(dish_list) if dish_list else (q if groq_failed else None)
     return {
         "exact": exact,
         "similar": similar,
         "parsed": {
-            "dish": dish if not groq_failed else q,
+            "dish": display_dish,
             "cuisine": cuisine,
             "price_min_ils": parsed.get("price_min_ils"),
             "price_max_ils": parsed.get("price_max_ils"),
@@ -736,7 +765,10 @@ async def _search_with_excerpt(
     limit: int = 20,
 ) -> List[Place]:
     """Search Place name/cuisine, DataSource excerpts, AND menu_items for a keyword."""
-    words = [w for w in keyword.split() if len(w) >= 3]
+    raw_words = [w for w in keyword.split() if len(w) >= 2]
+    # Strip Hebrew "ו" (and) conjunction prefix from words like "וסושי" → "סושי"
+    stripped = [w[1:] for w in raw_words if w.startswith('ו') and len(w) >= 3]
+    words = list(dict.fromkeys([w for w in raw_words if len(w) >= 3] + stripped))
     search_terms = list(dict.fromkeys([keyword] + words))
 
     conditions = [
