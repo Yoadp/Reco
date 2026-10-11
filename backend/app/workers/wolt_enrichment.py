@@ -97,16 +97,23 @@ async def fetch_wolt_venues(client: httpx.AsyncClient, lat: float, lon: float) -
         return []
 
 
-async def enrich():
+async def enrich(redo: bool = False):
     # 1. Load all our places from the DB
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(Place).where(Place.lat.isnot(None), Place.lng.isnot(None)))
         places = list(result.scalars().all())
-        # Track which places already have a wolt source
         existing = await db.execute(
             select(DataSource.place_id).where(DataSource.source_type == "wolt")
         )
         already_wolt = set(existing.scalars().all())
+
+    if redo and already_wolt:
+        print(f"--redo: deleting {len(already_wolt)} stale Wolt sources…")
+        from sqlalchemy import delete as sql_delete
+        async with AsyncSessionLocal() as db:
+            await db.execute(sql_delete(DataSource).where(DataSource.source_type == "wolt"))
+            await db.commit()
+        already_wolt = set()
 
     places_needing_wolt = [p for p in places if p.id not in already_wolt]
     print(f"Matching {len(places_needing_wolt)} places against Wolt…")
@@ -182,4 +189,8 @@ async def enrich():
 
 
 if __name__ == "__main__":
-    asyncio.run(enrich())
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--redo", action="store_true", help="Delete and re-match all Wolt sources")
+    args = parser.parse_args()
+    asyncio.run(enrich(redo=args.redo))

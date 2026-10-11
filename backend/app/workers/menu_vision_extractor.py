@@ -227,38 +227,49 @@ def _wolt_slug(url: str) -> str | None:
     m = re.search(r"/restaurant/([^/?#]+)", url)
     return m.group(1) if m else None
 
-async def _wolt_api(slug: str, client: httpx.AsyncClient) -> list[dict]:
+async def _wolt_api(slug: str, client: httpx.AsyncClient, lat: float = 32.0853, lon: float = 34.7818) -> list[dict]:
+    """
+    Find the venue by slug in the nearby listing and extract venue_preview_items.
+    lat/lon default to Tel Aviv centre; caller should pass the place's own coordinates.
+    """
     try:
         r = await client.get(
-            f"https://consumer-api.wolt.com/v1/pages/restaurants?slug={slug}",
+            "https://consumer-api.wolt.com/v1/pages/restaurants",
+            params={"lat": lat, "lon": lon},
             headers={"Accept": "application/json", "Accept-Language": "he", "app-language": "he"},
             timeout=10.0)
         if r.status_code != 200:
             return []
-        data = r.json()
-        items = []
-        for section in data.get("sections", []):
-            cat = section.get("name", "אחר")
-            for row in section.get("items", []):
-                for item in row.get("items", []):
-                    name = (item.get("track") or {}).get("name") or item.get("name", "")
-                    if not name:
-                        continue
-                    price_raw = (item.get("track") or {}).get("price") or item.get("price")
-                    price = int(price_raw / 100) if isinstance(price_raw, (int, float)) and price_raw > 0 else None
-                    items.append({"name": name, "price_ils": price, "category": cat,
-                                  "description": (item.get("description") or "")[:100] or None})
-        return items
+        for section in r.json().get("sections", []):
+            if section.get("template") != "venue-vertical-list":
+                continue
+            for item in section.get("items", []):
+                venue = item.get("venue", {})
+                if venue.get("slug") != slug:
+                    continue
+                preview = venue.get("venue_preview_items", [])
+                if not preview:
+                    return []
+                return [
+                    {
+                        "name": pi.get("name", ""),
+                        "price_ils": int(pi["price"] / 100) if isinstance(pi.get("price"), (int, float)) and pi["price"] > 0 else None,
+                        "category": "אחר",
+                        "description": None,
+                    }
+                    for pi in preview if pi.get("name")
+                ]
+        return []
     except Exception as e:
         _log(f"    Wolt API error: {e}")
         return []
 
-async def _layer2(url: str, browser, client: httpx.AsyncClient) -> list[dict]:
+async def _layer2(url: str, browser, client: httpx.AsyncClient, lat: float = 32.0853, lon: float = 34.7818) -> list[dict]:
     slug = _wolt_slug(url)
     if not slug:
         return []
     _log(f"    🔵 Wolt API ({slug})")
-    items = await _wolt_api(slug, client)
+    items = await _wolt_api(slug, client, lat=lat, lon=lon)
     if not items:
         _log("    🔵 Wolt Playwright fallback")
         text = await _fetch_playwright(url, browser)
@@ -287,7 +298,13 @@ async def _save(place_id, items: list[dict], source: str):
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
-async def run(slug_filter: str | None = None, redo: bool = False, limit: int | None = None, no_wolt: bool = False):
+async def run(
+    slug_filter: str | None = None,
+    redo: bool = False,
+    limit: int | None = None,
+    no_wolt: bool = False,
+    wolt_only: bool = False,
+):
     async with AsyncSessionLocal() as db:
         stmt = (select(Place, DataSource)
             .join(DataSource, DataSource.place_id == Place.id)
@@ -314,60 +331,89 @@ async def run(slug_filter: str | None = None, redo: bool = False, limit: int | N
         place_map = {k: v for k, v in place_map.items() if k not in done}
 
     entries = list(place_map.values())
-    # When wolt is disabled, skip places that only have a wolt DataSource
     if no_wolt:
         entries = [e for e in entries if e["menu_link"] is not None]
+    if wolt_only:
+        entries = [e for e in entries if e["wolt"] is not None]
     if limit:
         entries = entries[:limit]
 
-    _log(f"Processing {len(entries)} places (1 shared browser)...")
+    _log(f"Processing {len(entries)} places{' (Wolt API only — no Groq)' if wolt_only else ' (1 shared browser)'}...")
     counts = {"website": 0, "wolt": 0, "failed": 0}
 
-    from playwright.async_api import async_playwright
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
+    if wolt_only:
+        # Fast path: Wolt API only, no browser, no Groq
         async with httpx.AsyncClient(
             headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120"},
             follow_redirects=True,
         ) as client:
             for i, entry in enumerate(entries, 1):
                 place = entry["place"]
-                menu_ds = entry["menu_link"]
                 wolt_ds = entry["wolt"]
-                _log(f"\n[{i}/{len(entries)}] {place.name}")
-
-                items: list[dict] = []
-                src = ""
-
-                if menu_ds and menu_ds.url:
-                    _log(f"    Layer 1: {menu_ds.url[:70]}")
-                    try:
-                        items = await _layer1(menu_ds.url, browser, client)
-                    except Exception as e:
-                        _log(f"    Layer 1 error: {e}")
-                    if items:
-                        src = "website"
-
-                if not items and not no_wolt and wolt_ds and wolt_ds.url:
-                    _log(f"    Layer 2: {wolt_ds.url[:70]}")
-                    try:
-                        items = await _layer2(wolt_ds.url, browser, client)
-                    except Exception as e:
-                        _log(f"    Layer 2 error: {e}")
-                    if items:
-                        src = "wolt"
-
+                _log(f"[{i}/{len(entries)}] {place.name}")
+                slug = _wolt_slug(wolt_ds.url) if wolt_ds else None
+                if not slug:
+                    counts["failed"] += 1
+                    continue
+                lat = place.lat or 32.0853
+                lon = place.lng or 34.7818
+                items = await _wolt_api(slug, client, lat=lat, lon=lon)
                 if items:
-                    await _save(place.id, items, src)
-                    counts[src] += 1
-                    _log(f"    ✓ {len(items)} items ({src}): {', '.join(x['name'] for x in items[:3])}")
+                    await _save(place.id, items, "wolt")
+                    counts["wolt"] += 1
+                    _log(f"  ✓ {len(items)} items: {', '.join(x['name'] for x in items[:3])}")
                 else:
                     counts["failed"] += 1
-                    _log(f"    ✗ no menu found")
+                    _log(f"  ✗ Wolt API returned nothing for {slug}")
+                await asyncio.sleep(0.5)
+    else:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            async with httpx.AsyncClient(
+                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120"},
+                follow_redirects=True,
+            ) as client:
+                for i, entry in enumerate(entries, 1):
+                    place = entry["place"]
+                    menu_ds = entry["menu_link"]
+                    wolt_ds = entry["wolt"]
+                    _log(f"\n[{i}/{len(entries)}] {place.name}")
 
-                await asyncio.sleep(CALL_DELAY)
+                    items: list[dict] = []
+                    src = ""
 
-        await browser.close()
+                    if menu_ds and menu_ds.url:
+                        _log(f"    Layer 1: {menu_ds.url[:70]}")
+                        try:
+                            items = await _layer1(menu_ds.url, browser, client)
+                        except Exception as e:
+                            _log(f"    Layer 1 error: {e}")
+                        if items:
+                            src = "website"
+
+                    if not items and not no_wolt and wolt_ds and wolt_ds.url:
+                        _log(f"    Layer 2: {wolt_ds.url[:70]}")
+                        try:
+                            lat = place.lat or 32.0853
+                            lon = place.lng or 34.7818
+                            items = await _layer2(wolt_ds.url, browser, client, lat=lat, lon=lon)
+                        except Exception as e:
+                            _log(f"    Layer 2 error: {e}")
+                        if items:
+                            src = "wolt"
+
+                    if items:
+                        await _save(place.id, items, src)
+                        counts[src] += 1
+                        _log(f"    ✓ {len(items)} items ({src}): {', '.join(x['name'] for x in items[:3])}")
+                    else:
+                        counts["failed"] += 1
+                        _log(f"    ✗ no menu found")
+
+                    await asyncio.sleep(CALL_DELAY)
+
+            await browser.close()
 
     _log(f"\n✓ Done — website: {counts['website']}, wolt: {counts['wolt']}, failed: {counts['failed']}")
 
@@ -378,5 +424,6 @@ if __name__ == "__main__":
     parser.add_argument("--redo", action="store_true")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--no-wolt", action="store_true", help="Skip Wolt layer 2 fallback")
+    parser.add_argument("--wolt-only", action="store_true", help="Wolt API only — fast, no Groq, no browser")
     args = parser.parse_args()
-    asyncio.run(run(slug_filter=args.slug, redo=args.redo, limit=args.limit, no_wolt=args.no_wolt))
+    asyncio.run(run(slug_filter=args.slug, redo=args.redo, limit=args.limit, no_wolt=args.no_wolt, wolt_only=args.wolt_only))
