@@ -2,39 +2,24 @@
 
 import Link from "next/link";
 import { useState, useCallback } from "react";
+import { Heart, MapPin, ForkKnife } from "@phosphor-icons/react";
 import { type Place, savePlace, unsavePlace, photoUrl } from "@/lib/api";
-import { getPlaceGradient, getPlaceEmoji, getCuisineChipColor } from "@/lib/categories";
+import { getPlaceGradient, getPlaceEmoji } from "@/lib/categories";
 
 const PRICE = ["", "₪", "₪₪", "₪₪₪", "₪₪₪₪"];
 
-function scoreColor(score: number | null): string {
-  if (!score) return "bg-gray-200 text-gray-600";
-  if (score >= 4.7) return "bg-green-600 text-white";
-  if (score >= 4.0) return "bg-green-500 text-white";
-  if (score >= 3.5) return "bg-amber-500 text-white";
-  return "bg-red-500 text-white";
-}
-
 function isOpenNow(hours: Record<string, unknown> | null): boolean | null {
   if (!hours || !Array.isArray(hours.periods)) return null;
-
   const now = new Date();
-  // Convert JS day (0=Sun) to same format as Google (0=Sun) — they match
   const today = now.getDay();
   const currentMins = now.getHours() * 60 + now.getMinutes();
-
-  // Note: JS uses local time; for Israel the server is already in the right TZ for open/closed display purposes.
-  // The browser will use the user's local clock which is typically also Israel time.
   for (const period of hours.periods as Array<Record<string, Record<string, number>>>) {
     const openDay = period.open?.day;
     const openMins = (period.open?.hour ?? 0) * 60 + (period.open?.minute ?? 0);
     const closeInfo = period.close;
-
-    if (!closeInfo) return true; // 24/7
-
+    if (!closeInfo) return true;
     const closeDay = closeInfo.day;
     const closeMins = (closeInfo.hour ?? 0) * 60 + (closeInfo.minute ?? 0);
-
     if (openDay === closeDay) {
       if (today === openDay && openMins <= currentMins && currentMins < closeMins) return true;
     } else {
@@ -73,7 +58,6 @@ interface PlaceCardProps {
 function PlaceCard({ place, savedIds, isLoggedIn, userLat, userLng, onSaveToggle }: PlaceCardProps) {
   const gradient = getPlaceGradient(place.cuisine);
   const emoji = getPlaceEmoji(place.cuisine);
-  const chipColor = getCuisineChipColor(place.cuisine);
   const photo = photoUrl(place.photos?.[0]);
   const openStatus = isOpenNow(place.hours);
   const dist = userLat != null && userLng != null ? distanceKm(userLat, userLng, place.lat, place.lng) : null;
@@ -104,118 +88,101 @@ function PlaceCard({ place, savedIds, isLoggedIn, userLat, userLng, onSaveToggle
   return (
     <Link
       href={`/places/${place.slug}`}
-      className="block rounded-2xl overflow-hidden bg-white border border-gray-100 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 active:scale-[0.98]"
+      className="relative block rounded-xl overflow-hidden aspect-[3/4] hover:scale-[1.02] transition-transform duration-200 active:scale-[0.98]"
     >
-      {/* Photo or gradient header */}
-      <div className="relative h-32">
-        {photo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={photo}
-            alt={place.name}
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              const target = e.currentTarget;
-              target.style.display = "none";
-              const fallback = target.nextElementSibling as HTMLElement | null;
-              if (fallback) fallback.style.display = "flex";
-            }}
-          />
-        ) : null}
-        {/* Fallback gradient (always rendered, hidden when photo loads) */}
-        <div
-          className={`absolute inset-0 bg-gradient-to-br ${gradient} flex flex-col items-center justify-center`}
-          style={{ display: photo ? "none" : "flex" }}
-        >
-          <span className="text-4xl mb-1">{emoji}</span>
-        </div>
-
-        {/* Dark overlay for photo cards so badges are readable */}
-        {photo && (
-          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/20" />
-        )}
-
-        {/* Score badge */}
-        {place.aggregated_score && (
-          <span className={`absolute top-2 right-2 text-xs font-bold px-2 py-0.5 rounded-full ${scoreColor(place.aggregated_score)}`}>
-            ★ {place.aggregated_score.toFixed(1)}
-          </span>
-        )}
-
-        {/* Heart / save button */}
-        {isLoggedIn && (
-          <button
-            onClick={handleHeart}
-            className={`absolute top-2 left-2 w-7 h-7 flex items-center justify-center rounded-full transition-all ${
-              isSaved ? "bg-red-500 text-white" : "bg-white/80 text-gray-400 hover:text-red-400"
-            } ${saving ? "opacity-50" : ""}`}
-            aria-label={isSaved ? "הסר מהרשימה" : "שמור"}
-          >
-            {isSaved ? "♥" : "♡"}
-          </button>
-        )}
-
-        {/* Name overlay on photo */}
-        {photo && (
-          <div className="absolute bottom-0 left-0 right-0 px-2.5 pb-2 pt-6">
-            <h3 className="font-extrabold text-white text-sm leading-tight line-clamp-2">
-              {place.name}
-            </h3>
-          </div>
-        )}
+      {/* Photo or gradient fill */}
+      {photo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={photo}
+          alt={place.name}
+          className="absolute inset-0 w-full h-full object-cover"
+          onError={(e) => {
+            const el = e.currentTarget as HTMLImageElement;
+            el.style.display = "none";
+            const fb = el.nextElementSibling as HTMLElement | null;
+            if (fb) fb.style.display = "flex";
+          }}
+        />
+      ) : null}
+      <div
+        className={`absolute inset-0 bg-gradient-to-br ${gradient} flex items-center justify-center`}
+        style={{ display: photo ? "none" : "flex" }}
+      >
+        <span className="text-5xl">{emoji}</span>
       </div>
 
-      {/* Name shown below when no photo */}
-      {!photo && (
-        <div className="px-2.5 pt-2 pb-0">
-          <h3 className="font-extrabold text-gray-800 text-center text-sm leading-tight line-clamp-2">
-            {place.name}
-          </h3>
-        </div>
+      {/* Gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-transparent" />
+
+      {/* Score top-right */}
+      {place.aggregated_score && (
+        <span className="absolute top-2.5 right-2.5 text-xs font-bold text-amber-300 bg-black/40 px-2 py-0.5 rounded-full backdrop-blur-sm">
+          ★ {place.aggregated_score.toFixed(1)}
+        </span>
       )}
 
-      {/* Info strip */}
-      <div className="px-3 py-2.5 bg-white">
-        <div className="flex items-center justify-between gap-1 mb-1">
-          <div className="min-w-0 flex-1">
-            {place.cuisine && place.cuisine.length > 0 && (
-              <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full inline-block mb-1 ${chipColor}`}>
-                {place.cuisine[0]}
-              </span>
-            )}
-            {place.address && (
-              <span className="text-xs text-gray-400 truncate block leading-tight">
-                {place.address.split(",")[0]}
-              </span>
-            )}
-          </div>
-          {place.price_range && (
-            <span className="text-sm font-semibold text-indigo-500 shrink-0">{PRICE[place.price_range]}</span>
-          )}
-        </div>
+      {/* Heart top-left */}
+      {isLoggedIn && (
+        <button
+          onClick={handleHeart}
+          className={`absolute top-2.5 left-2.5 w-7 h-7 flex items-center justify-center rounded-full backdrop-blur-sm transition-all ${saving ? "opacity-50" : ""}`}
+          style={{
+            background: isSaved ? "var(--accent)" : "rgba(255,255,255,0.8)",
+            color: isSaved ? "#fff" : "var(--text-muted)",
+          }}
+          aria-label={isSaved ? "הסר מהרשימה" : "שמור"}
+        >
+          <Heart size={14} weight={isSaved ? "fill" : "regular"} />
+        </button>
+      )}
 
-        {/* Open status + distance row */}
-        <div className="flex items-center gap-2 mt-1">
+      {/* Bottom overlay: all info */}
+      <div className="absolute bottom-0 left-0 right-0 p-3 text-white">
+        {/* Meta row above name */}
+        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+          {place.cuisine && place.cuisine.length > 0 && (
+            <span className="text-xs font-medium px-1.5 py-0.5 rounded-full bg-white/20 backdrop-blur-sm">
+              {place.cuisine[0]}
+            </span>
+          )}
           {openStatus !== null && (
-            <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${openStatus ? "bg-green-100 text-green-700" : "bg-red-50 text-red-500"}`}>
-              {openStatus ? "● פתוח" : "● סגור"}
+            <span
+              className="text-xs font-medium px-1.5 py-0.5 rounded-full backdrop-blur-sm"
+              style={openStatus
+                ? { background: "rgba(21,128,61,0.75)" }
+                : { background: "rgba(220,38,38,0.65)" }
+              }
+            >
+              {openStatus ? "פתוח" : "סגור"}
+            </span>
+          )}
+          {place.price_range && (
+            <span className="text-xs font-semibold text-white/70">
+              {PRICE[place.price_range]}
             </span>
           )}
           {dist !== null && (
-            <span className="text-xs text-indigo-500 font-medium">
-              📍 {dist < 1 ? `${Math.round(dist * 1000)} מ'` : `${dist.toFixed(1)} ק״מ`}
+            <span className="flex items-center gap-0.5 text-xs text-white/60">
+              <MapPin size={10} weight="fill" />
+              {dist < 1 ? `${Math.round(dist * 1000)} מ'` : `${dist.toFixed(1)} ק״מ`}
             </span>
           )}
         </div>
 
-        {/* Matched dishes badge */}
+        <h3 className="font-semibold text-sm leading-tight line-clamp-2">{place.name}</h3>
+
+        {place.city && (
+          <p className="text-xs text-white/55 mt-0.5">{place.city}</p>
+        )}
+
+        {/* Matched dishes */}
         {place.matched_dishes && place.matched_dishes.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1">
-            {place.matched_dishes.slice(0, 3).map((dish) => (
+            {place.matched_dishes.slice(0, 2).map((dish) => (
               <span
                 key={dish}
-                className="text-xs bg-orange-50 text-orange-700 border border-orange-200 px-1.5 py-0.5 rounded-full truncate max-w-[90px]"
-                title={dish}
+                className="text-xs px-1.5 py-0.5 rounded-full truncate max-w-[80px] bg-white/15 backdrop-blur-sm"
               >
                 {dish}
               </span>
@@ -240,9 +207,9 @@ interface Props {
 export default function PlaceGrid({ places, isLoading, savedIds, isLoggedIn, userLat, userLng, onSaveToggle }: Props) {
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="rounded-2xl bg-gray-100 animate-pulse h-40" />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="rounded-xl animate-pulse aspect-[3/4]" style={{ background: "var(--border)" }} />
         ))}
       </div>
     );
@@ -251,14 +218,16 @@ export default function PlaceGrid({ places, isLoading, savedIds, isLoggedIn, use
   if (places.length === 0) {
     return (
       <div className="py-16 text-center">
-        <p className="text-4xl mb-3">🍽️</p>
-        <p className="text-gray-500">לא נמצאו מסעדות</p>
+        <div className="flex justify-center mb-3">
+          <ForkKnife size={36} style={{ color: "var(--text-faint)" }} />
+        </div>
+        <p style={{ color: "var(--text-muted)" }}>לא נמצאו מסעדות</p>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       {places.map((p) => (
         <PlaceCard
           key={p.id}

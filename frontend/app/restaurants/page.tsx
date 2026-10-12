@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
+import { MagnifyingGlass, MapPin, GridFour, MapTrifold, X, SlidersHorizontal } from "@phosphor-icons/react";
 import { searchPlaces, smartSearchPlaces, getSavedIds, getMe, type SmartSearchResult } from "@/lib/api";
 import CategoryRow from "@/components/CategoryRow";
 import SubcategoryChips from "@/components/SubcategoryChips";
@@ -211,45 +212,116 @@ function RestaurantsPage() {
 
   const parsed = smartResult?.parsed;
 
-  return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
-      {/* Header row */}
-      <div className="flex items-center justify-between mb-5">
-        <h1 className="text-2xl font-extrabold text-gray-900">גלה מסעדות</h1>
+  const chipSm = "shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border transition-all";
+  const chipActive = { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" };
+  const chipIdle = { background: "var(--surface)", color: "var(--text-muted)", borderColor: "var(--border)" };
 
-        {/* View toggle */}
-        <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+  const CITIES = ["תל אביב","יפו","רמת גן","גבעתיים","בני ברק","פתח תקווה","ראשון לציון","חולון","בת ים","הרצליה","רעננה","כפר סבא","הוד השרון","נתניה","רחובות","נס ציונה","מודיעין"];
+
+  return (
+    <div>
+      {/* Sticky search + filter header */}
+      <div
+        className="sticky top-14 z-30 px-4 pt-3 pb-2"
+        style={{ background: "rgba(249,247,244,0.95)", backdropFilter: "blur(12px)", borderBottom: "1px solid var(--border)" }}
+      >
+        {/* Search bar full-width */}
+        <form onSubmit={handleSearch} className="flex gap-2 mb-2.5">
+          <div className="relative flex-1">
+            <MagnifyingGlass
+              size={15}
+              className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              style={{ color: "var(--text-faint)" }}
+            />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="פסטה, סושי, חומוס יפו..."
+              className="w-full rounded-xl pr-9 pl-4 py-2.5 text-sm focus:outline-none transition-colors"
+              style={{
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                color: "var(--text)",
+              }}
+              onFocus={e => (e.currentTarget.style.borderColor = "var(--accent)")}
+              onBlur={e => (e.currentTarget.style.borderColor = "var(--border)")}
+            />
+          </div>
           <button
-            onClick={() => setView("grid")}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              view === "grid"
-                ? "bg-white shadow text-indigo-600"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
+            type="submit"
+            disabled={smartLoading}
+            className="px-4 py-2.5 rounded-xl text-sm font-semibold shrink-0 disabled:opacity-60 transition-all active:scale-[0.97]"
+            style={{ background: "var(--accent)", color: "#fff" }}
+            onMouseEnter={e => (e.currentTarget.style.background = "var(--accent-dark)")}
+            onMouseLeave={e => (e.currentTarget.style.background = "var(--accent)")}
           >
-            ⊞ רשת
+            {smartLoading ? "..." : "חיפוש"}
           </button>
+        </form>
+
+        {/* Single scrolling filter row */}
+        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1">
+          {/* Open now */}
           <button
-            onClick={() => setView("map")}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              view === "map"
-                ? "bg-white shadow text-indigo-600"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
+            onClick={() => setOpenNow((v) => !v)}
+            className={chipSm}
+            style={openNow ? { background: "#15803d", color: "#fff", borderColor: "#15803d" } : chipIdle}
           >
-            🗺️ מפה
+            פתוח עכשיו
           </button>
+
+          {/* Near me */}
+          <button
+            onClick={handleNearMe}
+            disabled={gpsLoading}
+            className={`${chipSm} flex items-center gap-1 disabled:opacity-50`}
+            style={userLat != null ? chipActive : chipIdle}
+          >
+            <MapPin size={11} weight={userLat != null ? "fill" : "regular"} />
+            {gpsLoading ? "מאתר..." : userLat != null ? "קרוב אליי ×" : "קרוב אליי"}
+          </button>
+
+          {/* Sort */}
+          <select
+            value={sortMode}
+            onChange={e => { setSortMode(e.target.value); setSmartResult(null); }}
+            className={`${chipSm} cursor-pointer focus:outline-none`}
+            style={sortMode
+              ? { background: "var(--accent-light)", borderColor: "var(--accent-muted)", color: "var(--accent)" }
+              : chipIdle}
+          >
+            <option value="">מיין לפי</option>
+            <option value="rating">הכי מדורגות</option>
+            <option value="trending">חם עכשיו</option>
+            <option value="hidden_gems">פנינים נסתרות</option>
+            <option value="new">חדש ב-Reco</option>
+          </select>
+
+          {/* Divider */}
+          <div className="w-px shrink-0 self-stretch" style={{ background: "var(--border)" }} />
+
+          {/* City chips inline */}
+          {CITIES.map(city => (
+            <button
+              key={city}
+              onClick={() => setCityFilter(cityFilter === city ? "" : city)}
+              className={chipSm}
+              style={cityFilter === city ? chipActive : chipIdle}
+            >
+              {city}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Category row */}
-      <div className="mb-3">
+      <div className="px-4 pt-3 pb-1">
         <CategoryRow selected={selectedCategory} onSelect={handleCategorySelect} />
       </div>
 
       {/* Subcategory chips */}
       {selectedCategory && (
-        <div className="mb-4">
+        <div className="px-4 pb-2">
           <SubcategoryChips
             categoryId={selectedCategory}
             selected={selectedSub}
@@ -258,247 +330,191 @@ function RestaurantsPage() {
         </div>
       )}
 
-      {/* Search bar */}
-      <form onSubmit={handleSearch} className="flex gap-2 mb-3">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="נסה: פסטה ברוטב לימון במחיר 60-80, סושי ברמת גן..."
-          className="flex-1 border border-gray-200 bg-gray-50 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-colors"
-        />
-        <button
-          type="submit"
-          disabled={smartLoading}
-          className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors shrink-0 disabled:opacity-60"
-        >
-          {smartLoading ? "מחפש..." : "חיפוש"}
-        </button>
-      </form>
-
-      {/* Filter action row: Open Now + Near Me + Sort */}
-      <div className="flex gap-2 mb-3 flex-wrap">
-        <button
-          onClick={() => setOpenNow((v) => !v)}
-          className={`flex items-center gap-1.5 text-sm font-medium px-3.5 py-1.5 rounded-full border transition-all ${
-            openNow
-              ? "bg-green-600 text-white border-green-600 shadow-sm"
-              : "bg-white text-gray-600 border-gray-300 hover:border-green-500 hover:text-green-700"
-          }`}
-        >
-          <span className={`w-2 h-2 rounded-full ${openNow ? "bg-white" : "bg-green-400"}`} />
-          פתוח עכשיו
-        </button>
-
-        <button
-          onClick={handleNearMe}
-          disabled={gpsLoading}
-          className={`flex items-center gap-1.5 text-sm font-medium px-3.5 py-1.5 rounded-full border transition-all disabled:opacity-50 ${
-            userLat != null
-              ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-              : "bg-white text-gray-600 border-gray-300 hover:border-indigo-400 hover:text-indigo-700"
-          }`}
-        >
-          {gpsLoading ? "מאתר..." : userLat != null ? "📍 קרוב אליי ×" : "📍 קרוב אליי"}
-        </button>
-
-        {/* Sort selector */}
-        <select
-          value={sortMode}
-          onChange={e => { setSortMode(e.target.value); setSmartResult(null); }}
-          className={`text-sm font-medium px-3 py-1.5 rounded-full border transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-300 ${
-            sortMode ? "bg-amber-50 border-amber-300 text-amber-800" : "bg-white border-gray-300 text-gray-600"
-          }`}
-        >
-          <option value="">מיין: ברירת מחדל</option>
-          <option value="rating">★ הכי מדורגות</option>
-          <option value="trending">🔥 חם עכשיו</option>
-          <option value="hidden_gems">💎 פנינים נסתרות</option>
-          <option value="new">🆕 חדש ב-Reco</option>
-        </select>
-      </div>
-
-      {/* City filter chips */}
-      <div className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-4 px-4" style={{ scrollbarWidth: "none" }}>
-        {["תל אביב","יפו","רמת גן","גבעתיים","בני ברק","פתח תקווה","ראשון לציון","חולון","בת ים","הרצליה","רעננה","כפר סבא","הוד השרון","נתניה","רחובות","נס ציונה","מודיעין"].map(city => (
-          <button
-            key={city}
-            onClick={() => setCityFilter(cityFilter === city ? "" : city)}
-            className={`shrink-0 text-sm font-medium px-3.5 py-1.5 rounded-full border transition-all ${
-              cityFilter === city
-                ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                : "bg-white text-gray-600 border-gray-300 hover:border-indigo-400 hover:text-indigo-700"
-            }`}
-          >
-            {city}
-          </button>
-        ))}
-      </div>
-
-      {/* Parsed query chips — shown after smart search */}
-      {parsed && (
-        <div className="mb-4 flex items-center gap-2 flex-wrap">
-          {parsed.dish && (
-            <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-medium">
-              🍽️ {parsed.dish}
-            </span>
-          )}
-          {parsed.cuisine && !parsed.dish && (
-            <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-medium">
-              🍴 {parsed.cuisine}
-            </span>
-          )}
-          {(parsed.price_min_ils || parsed.price_max_ils) && (
-            <span className="text-xs bg-green-50 text-green-700 px-3 py-1 rounded-full font-medium">
-              💰 {parsed.price_min_ils && parsed.price_max_ils
-                ? `${parsed.price_min_ils}–${parsed.price_max_ils} ₪`
-                : parsed.price_max_ils
-                ? `עד ${parsed.price_max_ils} ₪`
-                : `מ-${parsed.price_min_ils} ₪`}
-            </span>
-          )}
-          {parsed.city && (
-            <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-medium">
-              📍 {parsed.city}
-            </span>
-          )}
-          {parsed.party_size != null && (
-            <span className="text-xs bg-purple-50 text-purple-700 px-3 py-1 rounded-full font-medium">
-              👥 {parsed.party_size} סועדים
-            </span>
-          )}
-          {parsed.open_at_hour != null && (() => {
-            const DAY_NAMES = ["ראשון","שני","שלישי","רביעי","חמישי","שישי","שבת"];
-            const todayGoogle = (new Date().getDay());
-            const dayLabel = parsed.open_at_day === todayGoogle
-              ? "היום"
-              : parsed.open_at_day === (todayGoogle + 1) % 7
-              ? "מחר"
-              : parsed.open_at_day != null ? DAY_NAMES[parsed.open_at_day] : "היום";
-            return (
-              <span className="text-xs bg-amber-50 text-amber-700 px-3 py-1 rounded-full font-medium">
-                🕐 {dayLabel} ב-{String(parsed.open_at_hour).padStart(2,"0")}:00
-              </span>
-            );
-          })()}
-          <button
-            onClick={clearSmartSearch}
-            className="text-xs text-gray-400 hover:text-gray-600 px-2"
-          >
-            × נקה
-          </button>
-        </div>
-      )}
-
-      {/* Active filter chips — shown when no smart result */}
-      {!smartResult && (cuisineFilter || search || cityFilter || openNow || userLat != null) && (
-        <div className="mb-4 flex items-center gap-2 flex-wrap">
-          {cityFilter && (
-            <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-medium">
-              📍 {cityFilter}
-              <button onClick={() => setCityFilter("")} className="mr-1.5 opacity-60 hover:opacity-100">×</button>
-            </span>
-          )}
-          {cuisineFilter && (
-            <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full font-medium">
-              {cuisineFilter}
-              <button
-                onClick={() => { setSelectedCategory(null); setSelectedSub(null); }}
-                className="mr-1.5 opacity-60 hover:opacity-100"
-              >×</button>
-            </span>
-          )}
-          {search && (
-            <span className="text-xs bg-gray-100 text-gray-600 px-3 py-1 rounded-full">
-              חיפוש: {search}
-              <button
-                onClick={() => { setQ(""); setSearch(""); }}
-                className="mr-1.5 opacity-60 hover:opacity-100"
-              >×</button>
-            </span>
-          )}
-          <span className="text-xs text-gray-400">{fastPlaces.length} תוצאות</span>
-        </div>
-      )}
-
-      {/* Smart search results */}
-      {smartResult && !smartLoading && view === "grid" && (
-        <>
-          {smartResult.exact.length > 0 ? (
-            <section className="mb-6">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0" />
-                <h2 className="text-sm font-bold text-gray-800">תוצאות מדויקות</h2>
-                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{smartResult.exact.length}</span>
-              </div>
-              <PlaceGrid
-                places={smartResult.exact}
-                isLoading={false}
-                savedIds={savedIds}
-                isLoggedIn={isLoggedIn}
-                userLat={userLat}
-                userLng={userLng}
-                onSaveToggle={handleSaveToggle}
-              />
-            </section>
-          ) : (
-            <p className="text-sm text-gray-500 mb-4 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
-              לא נמצאו תוצאות מדויקות — הנה מקומות שאולי יתאימו:
-            </p>
-          )}
-
-          {smartResult.similar.length > 0 && (
-            <section className="mb-6">
-              {smartResult.exact.length > 0 && (
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
-                  <h2 className="text-sm font-bold text-gray-600">תוצאות דומות</h2>
-                  <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{smartResult.similar.length}</span>
-                </div>
+      {/* Active filter summary + view toggle */}
+      <div className="px-4 py-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+          {parsed && (
+            <>
+              {parsed.dish && (
+                <span className="text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: "var(--accent-light)", color: "var(--accent)" }}>
+                  {parsed.dish}
+                </span>
               )}
-              <PlaceGrid
-                places={smartResult.similar}
-                isLoading={false}
-                savedIds={savedIds}
-                isLoggedIn={isLoggedIn}
-                userLat={userLat}
-                userLng={userLng}
-                onSaveToggle={handleSaveToggle}
-              />
-            </section>
+              {parsed.cuisine && !parsed.dish && (
+                <span className="text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: "var(--accent-light)", color: "var(--accent)" }}>
+                  {parsed.cuisine}
+                </span>
+              )}
+              {(parsed.price_min_ils || parsed.price_max_ils) && (
+                <span className="text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: "#dcfce7", color: "#15803d" }}>
+                  {parsed.price_min_ils && parsed.price_max_ils
+                    ? `${parsed.price_min_ils}–${parsed.price_max_ils} ₪`
+                    : parsed.price_max_ils
+                    ? `עד ${parsed.price_max_ils} ₪`
+                    : `מ-${parsed.price_min_ils} ₪`}
+                </span>
+              )}
+              {parsed.city && (
+                <span className="text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: "var(--accent-light)", color: "var(--accent)" }}>
+                  {parsed.city}
+                </span>
+              )}
+              {parsed.party_size != null && (
+                <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "var(--border)", color: "var(--text-muted)" }}>
+                  {parsed.party_size} סועדים
+                </span>
+              )}
+              {parsed.open_at_hour != null && (() => {
+                const DAY_NAMES = ["ראשון","שני","שלישי","רביעי","חמישי","שישי","שבת"];
+                const todayGoogle = new Date().getDay();
+                const dayLabel = parsed.open_at_day === todayGoogle ? "היום"
+                  : parsed.open_at_day === (todayGoogle + 1) % 7 ? "מחר"
+                  : parsed.open_at_day != null ? DAY_NAMES[parsed.open_at_day] : "היום";
+                return (
+                  <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "#fef9c3", color: "#a16207" }}>
+                    {dayLabel} ב-{String(parsed.open_at_hour).padStart(2,"0")}:00
+                  </span>
+                );
+              })()}
+              <button
+                onClick={clearSmartSearch}
+                className="flex items-center gap-0.5 text-xs"
+                style={{ color: "var(--text-faint)" }}
+              >
+                <X size={11} /> נקה
+              </button>
+            </>
           )}
 
-          {smartResult.exact.length === 0 && smartResult.similar.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
-              <p className="text-lg mb-1">לא נמצאו תוצאות</p>
-              <p className="text-sm">נסה לשנות את החיפוש או לבחור קטגוריה</p>
-            </div>
+          {!smartResult && (cityFilter || cuisineFilter || search) && (
+            <>
+              {cityFilter && (
+                <span className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: "var(--accent-light)", color: "var(--accent)" }}>
+                  {cityFilter}
+                  <button onClick={() => setCityFilter("")} className="flex items-center opacity-60 hover:opacity-100"><X size={10} /></button>
+                </span>
+              )}
+              {cuisineFilter && (
+                <span className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: "var(--accent-light)", color: "var(--accent)" }}>
+                  {cuisineFilter}
+                  <button onClick={() => { setSelectedCategory(null); setSelectedSub(null); }} className="flex items-center opacity-60 hover:opacity-100"><X size={10} /></button>
+                </span>
+              )}
+              {search && (
+                <span className="text-xs" style={{ color: "var(--text-faint)" }}>
+                  {fastPlaces.length} תוצאות
+                </span>
+              )}
+            </>
           )}
-        </>
-      )}
-
-      {/* Map view */}
-      {view === "map" && <MapView places={allPlaces} />}
-
-      {/* Regular (non-smart) grid results */}
-      {!smartResult && view === "grid" && (
-        <PlaceGrid
-          places={fastPlaces}
-          isLoading={fastLoading}
-          savedIds={savedIds}
-          isLoggedIn={isLoggedIn}
-          userLat={userLat}
-          userLng={userLng}
-          onSaveToggle={handleSaveToggle}
-        />
-      )}
-
-      {/* Loading spinner for smart search */}
-      {smartLoading && (
-        <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-400">
-          <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-          <p className="text-sm">מנתח את החיפוש שלך...</p>
         </div>
-      )}
+
+        {/* View toggle - compact, right side */}
+        <div className="flex shrink-0 gap-1">
+          <button
+            onClick={() => setView("grid")}
+            className="w-8 h-8 flex items-center justify-center rounded-lg transition-all"
+            style={view === "grid"
+              ? { background: "var(--accent)", color: "#fff" }
+              : { background: "transparent", color: "var(--text-faint)" }}
+            title="תצוגת רשת"
+          >
+            <GridFour size={16} />
+          </button>
+          <button
+            onClick={() => setView("map")}
+            className="w-8 h-8 flex items-center justify-center rounded-lg transition-all"
+            style={view === "map"
+              ? { background: "var(--accent)", color: "#fff" }
+              : { background: "transparent", color: "var(--text-faint)" }}
+            title="תצוגת מפה"
+          >
+            <MapTrifold size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* Content area */}
+      <div className="px-4 pb-10">
+        {/* Map view */}
+        {view === "map" && <MapView places={allPlaces} />}
+
+        {/* Smart search results */}
+        {smartResult && !smartLoading && view === "grid" && (
+          <>
+            {smartResult.exact.length > 0 ? (
+              <section className="mb-6">
+                <p className="text-xs font-medium mb-3" style={{ color: "var(--text-faint)" }}>
+                  {smartResult.exact.length} תוצאות מדויקות
+                </p>
+                <PlaceGrid
+                  places={smartResult.exact}
+                  isLoading={false}
+                  savedIds={savedIds}
+                  isLoggedIn={isLoggedIn}
+                  userLat={userLat}
+                  userLng={userLng}
+                  onSaveToggle={handleSaveToggle}
+                />
+              </section>
+            ) : (
+              <p className="text-sm mb-4 rounded-xl px-4 py-3" style={{ background: "var(--accent-light)", color: "var(--accent)" }}>
+                לא נמצאו תוצאות מדויקות — הנה מקומות שאולי יתאימו:
+              </p>
+            )}
+
+            {smartResult.similar.length > 0 && (
+              <section className="mb-6">
+                {smartResult.exact.length > 0 && (
+                  <p className="text-xs font-medium mb-3" style={{ color: "var(--text-faint)" }}>
+                    {smartResult.similar.length} תוצאות דומות
+                  </p>
+                )}
+                <PlaceGrid
+                  places={smartResult.similar}
+                  isLoading={false}
+                  savedIds={savedIds}
+                  isLoggedIn={isLoggedIn}
+                  userLat={userLat}
+                  userLng={userLng}
+                  onSaveToggle={handleSaveToggle}
+                />
+              </section>
+            )}
+
+            {smartResult.exact.length === 0 && smartResult.similar.length === 0 && (
+              <div className="text-center py-16" style={{ color: "var(--text-faint)" }}>
+                <p className="text-base mb-1">לא נמצאו תוצאות</p>
+                <p className="text-sm">נסה לשנות את החיפוש</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Regular grid */}
+        {!smartResult && view === "grid" && (
+          <PlaceGrid
+            places={fastPlaces}
+            isLoading={fastLoading}
+            savedIds={savedIds}
+            isLoggedIn={isLoggedIn}
+            userLat={userLat}
+            userLng={userLng}
+            onSaveToggle={handleSaveToggle}
+          />
+        )}
+
+        {/* Smart search loading */}
+        {smartLoading && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            <div
+              className="w-7 h-7 border-[3px] rounded-full animate-spin"
+              style={{ borderColor: "var(--border)", borderTopColor: "var(--accent)" }}
+            />
+            <p className="text-sm" style={{ color: "var(--text-faint)" }}>מנתח את החיפוש שלך...</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -40,9 +40,12 @@ export default function CategoryRow({ selected, onSelect }: Props) {
           shrink-0 flex flex-col items-center justify-center gap-1
           w-20 h-20 rounded-2xl snap-start transition-all duration-200
           ${selected === null
-            ? "bg-indigo-600 text-white shadow-lg scale-105 ring-2 ring-offset-2 ring-indigo-600"
-            : "bg-gray-100 hover:bg-gray-200 text-gray-600"}
+            ? "shadow-lg scale-105 ring-2 ring-offset-2"
+            : "hover:opacity-90"}
         `}
+        style={selected === null
+          ? { background: "var(--accent)", color: "#fff" }
+          : { background: "var(--border)", color: "var(--text-muted)" }}
       >
         <span className="text-2xl leading-none">🍽️</span>
         <span className="text-xs font-bold text-center leading-tight">הכל</span>
