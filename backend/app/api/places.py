@@ -72,6 +72,7 @@ class ParsedQuery(BaseModel):
 class SmartSearchOut(BaseModel):
     exact: List[PlaceOut]
     similar: List[PlaceOut]
+    elsewhere: List[PlaceOut] = []
     parsed: ParsedQuery
 
 
@@ -86,6 +87,7 @@ async def smart_search(
     return SmartSearchOut(
         exact=result["exact"],
         similar=result["similar"],
+        elsewhere=result.get("elsewhere", []),
         parsed=ParsedQuery(**result["parsed"]),
     )
 

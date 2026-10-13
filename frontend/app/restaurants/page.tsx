@@ -468,9 +468,32 @@ function RestaurantsPage() {
           )}
 
           {smartResult.exact.length === 0 && smartResult.similar.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
-              <p className="text-lg mb-1">לא נמצאו תוצאות</p>
-              <p className="text-sm">נסה לשנות את החיפוש או לבחור קטגוריה</p>
+            <div>
+              <div className="text-center py-10" style={{ color: "var(--text-muted)" }}>
+                <p className="text-base font-semibold mb-1" style={{ color: "var(--text)" }}>
+                  {parsed?.dish && parsed?.city
+                    ? `לא נמצא ${parsed.dish} ב${parsed.city}`
+                    : "לא נמצאו תוצאות"}
+                </p>
+                <p className="text-sm">נסה לשנות את החיפוש או לבחור קטגוריה</p>
+              </div>
+
+              {smartResult.elsewhere && smartResult.elsewhere.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-xs font-semibold mb-3 px-1" style={{ color: "var(--text-faint)" }}>
+                    {parsed?.dish ? `נמצא ${parsed.dish} במקומות אחרים:` : "נמצא במקומות אחרים:"}
+                  </p>
+                  <PlaceGrid
+                    places={smartResult.elsewhere}
+                    isLoading={false}
+                    savedIds={savedIds}
+                    isLoggedIn={isLoggedIn}
+                    userLat={userLat}
+                    userLng={userLng}
+                    onSaveToggle={handleSaveToggle}
+                  />
+                </div>
+              )}
             </div>
           )}
         </>

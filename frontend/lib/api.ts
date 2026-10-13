@@ -191,6 +191,7 @@ export interface ParsedQuery {
 export interface SmartSearchResult {
   exact: Place[];
   similar: Place[];
+  elsewhere: Place[];
   parsed: ParsedQuery;
 }
 

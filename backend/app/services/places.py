@@ -723,8 +723,8 @@ async def smart_search_places(
             _add_to(similar, tier4)
 
         # --- Tier 5: city only (top rated in location) ---
-        # Used when food results are thin. City constraint is kept — never escape.
-        if len(exact) + len(similar) < 5:
+        # Only fire when NO food term was specified — otherwise sushi appears for mac&cheese searches
+        if len(exact) + len(similar) < 5 and not dish_list and not cuisine:
             tier5, _ = await search_places(db, city=resolved_city, limit=20)
             _add_to(similar, tier5)
 
@@ -740,10 +740,25 @@ async def smart_search_places(
         exact = [p for p in exact if p.hours and is_open_at(p.hours, oa_day, oa_hour)]
         similar = [p for p in similar if p.hours and is_open_at(p.hours, oa_day, oa_hour)]
 
+    # When a city+dish search found nothing, search globally for the dish (no city constraint)
+    # so we can suggest "found elsewhere" to the user instead of showing unrelated results.
+    elsewhere: List[Place] = []
+    if resolved_city and len(exact) + len(similar) < 3 and (dish_list or cuisine):
+        elsewhere_seen: set[uuid.UUID] = set(seen_ids)
+        for term in (dish_list if dish_list else [cuisine]):
+            if term:
+                t = await _search_with_excerpt(db, term, city=None, price_range=None, limit=15)
+                for p in t:
+                    if p.id not in elsewhere_seen and (p.city or "") != resolved_city:
+                        elsewhere_seen.add(p.id)
+                        elsewhere.append(p)
+        elsewhere = elsewhere[:10]
+
     display_dish = " ו ".join(dish_list) if dish_list else (q if groq_failed else None)
     return {
         "exact": exact,
         "similar": similar,
+        "elsewhere": elsewhere,
         "parsed": {
             "dish": display_dish,
             "cuisine": cuisine,
